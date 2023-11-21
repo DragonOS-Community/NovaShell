@@ -34,8 +34,8 @@ impl Shell {
         self.current_dir.clone()
     }
 
-    pub fn set_current_dir(&mut self, new_dir: String) {
-        self.current_dir = new_dir;
+    pub fn set_current_dir(&mut self, new_dir: &String) {
+        self.current_dir = new_dir.clone();
         Env::insert(String::from("PWD"), self.current_dir());
     }
 
@@ -51,7 +51,14 @@ impl Shell {
                 break;
             }
             let command_bytes = self.history_commands.last().unwrap().clone();
-            self.exec_command_in_bytes(&command_bytes);
+            let mut temp = command_bytes.clone();
+            temp.retain(|byte| *byte != b' ');
+            if temp.len() == 0 {
+                self.history_commands.pop().unwrap();
+            } else {
+                self.executed_commands.push(command_bytes.clone());
+                self.exec_command_in_bytes(&command_bytes);
+            }
         }
         self.write_commands();
     }
@@ -90,6 +97,15 @@ impl Shell {
         }
     }
 
+    fn read_char(byte: &mut u8) {
+        let mut c: libc::c_uchar = 0;
+        unsafe {
+            let p = &mut c as *mut libc::c_uchar as *mut libc::c_void;
+            libc::read(0, p, 1);
+        }
+        *byte = c;
+    }
+
     fn readline(&mut self, fd: usize) -> usize {
         let mut stdin = std::io::stdin();
         let mut stdout = std::io::stdout();
@@ -104,42 +120,27 @@ impl Shell {
         Printer::print_cursor(b' ');
         stdout.flush().unwrap();
         loop {
-            let mut c: libc::c_uchar = 0;
-            unsafe {
-                let p = &mut c as *mut libc::c_uchar as *mut libc::c_void;
-                libc::read(0, p, 1);
-                key[0] = c;
-            }
+            Self::read_char(&mut key[0]);
             // if stdin.read(&mut key).ok() != Some(1) {
             //     continue;
             // }
             if key[0] == 224 {
-                stdin.read(&mut key).unwrap();
+                Self::read_char(&mut key[0]);
+                // stdin.read(&mut key).unwrap();
                 if key[0] == b'\x1b' {
                     panic!();
                 }
                 if key[0] == UP || key[0] == DOWN {
-                    Printer::delete_from_index(0, buf.len());
-
-                    match key[0] {
-                        UP => {
-                            if command_index > 0 {
-                                command_index -= 1;
-                            }
-                        }
-
-                        DOWN => {
-                            if command_index < len {
-                                command_index += 1;
-                            }
-                        }
-
-                        _ => {}
+                    if key[0] == UP && command_index > 0 {
+                        command_index -= 1;
                     }
+                    if key[0] == DOWN && command_index < len {
+                        command_index += 1;
+                    }
+                    let old_length = buf.len();
                     buf = history_commands.get_mut(command_index).unwrap();
-                    Printer::print(&buf[..buf.len() - 1]);
+                    Printer::replace(&buf, old_length);
                     cursor = buf.len() - 1;
-                    Printer::print_cursor(b' ');
                 }
 
                 if key[0] == LEFT || key[0] == RIGHT {
@@ -225,23 +226,16 @@ impl Shell {
                     }
                     BS | DL => {
                         if cursor > 0 {
-                            Printer::delete_from_index(cursor, buf.len());
+                            Printer::delete(cursor, 1, buf);
+                            buf.remove(cursor - 1);
                             cursor -= 1;
-                            buf.remove(cursor);
-                            // stdout.write_all(&[BS]).unwrap();
-                            Printer::print(&[BS]);
-                            Printer::print_cursor(buf[cursor]);
-                            Printer::print(&buf[cursor + 1..]);
                         }
                     }
                     1..=31 => {}
                     c => {
-                        Printer::delete_from_index(cursor, buf.len());
-                        Printer::print(&[c]);
+                        Printer::insert(cursor, &[c], buf);
                         buf.insert(cursor, c);
                         cursor += 1;
-                        Printer::print_cursor(buf[cursor]);
-                        Printer::print(&buf[cursor + 1..]);
                     }
                 }
             }
@@ -276,6 +270,25 @@ impl Printer {
         for _i in 0..length - index {
             Printer::print(&[BS, SPACE, BS]);
         }
+    }
+
+    fn insert(cursor: usize, bytes: &[u8], buf: &Vec<u8>) {
+        Printer::delete_from_index(cursor, buf.len());
+        Printer::print(bytes);
+        Printer::print_cursor(buf[cursor]);
+        Printer::print(&buf[cursor + 1..]);
+    }
+
+    fn delete(cursor: usize, length: usize, buf: &Vec<u8>) {
+        Printer::delete_from_index(cursor - length, buf.len());
+        Printer::print_cursor(buf[cursor]);
+        Printer::print(&buf[cursor + 1..]);
+    }
+
+    fn replace(bytes: &[u8], old_length: usize) {
+        Printer::delete_from_index(0, old_length);
+        Printer::print(&bytes[0..bytes.len() - 1]);
+        Printer::print_cursor(b' ');
     }
 
     fn print(bytes: &[u8]) {
