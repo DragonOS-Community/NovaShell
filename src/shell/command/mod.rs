@@ -224,20 +224,19 @@ impl Shell {
 
     fn shell_cmd_cd(&mut self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 0 {
-            self.set_current_dir(String::from(ROOT_PATH));
+            self.set_current_dir(&String::from(ROOT_PATH));
             return Ok(());
         }
         if args.len() == 1 {
-            let path = self.to_absolute_path(args.get(0).unwrap());
-            if Path::new(&path).is_dir() {
-                self.set_current_dir(String::from(path));
-                return Ok(());
-            } else {
-                return Err(CommandError::NotDirectory(path));
+            let mut path = args.get(0).unwrap().clone();
+            match self.is_dir(&path) {
+                Ok(str) => path = str,
+                Err(e) => return Err(e),
             }
-        } else {
-            return Err(CommandError::WrongArgumentCount(args.len()));
+            self.set_current_dir(&path);
+            return Ok(());
         }
+        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     fn shell_cmd_ls(&self, args: &Vec<String>) -> Result<(), CommandError> {
@@ -246,7 +245,11 @@ impl Shell {
             path = self.current_dir();
         }
         if args.len() == 1 {
-            path = self.to_absolute_path(args.get(0).unwrap());
+            path = args.get(0).unwrap().clone();
+            match self.is_dir(&path) {
+                Ok(str) => path = str,
+                Err(e) => return Err(e),
+            }
         }
 
         if path.is_empty() {
@@ -277,12 +280,12 @@ impl Shell {
 
     fn shell_cmd_cat(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() > 0 {
-            let path = self.to_absolute_path(args.get(0).unwrap());
+            let mut path = args.get(0).unwrap().clone();
             let mut buf: Vec<u8> = Vec::new();
-            if !Path::new(&path).exists() {
-                return Err(CommandError::PathNotFound(path));
-            } else if !Path::new(&path).is_file() {
-                return Err(CommandError::NotFile(path));
+
+            match self.is_file(&path) {
+                Ok(str) => path = str,
+                Err(e) => return Err(e),
             }
 
             File::open(path).unwrap().read_to_end(&mut buf).unwrap();
@@ -291,9 +294,10 @@ impl Shell {
             }
 
             if args.len() == 3 {
-                let target_path = self.to_absolute_path(args.get(2).unwrap());
-                if !Path::new(&target_path).is_file() {
-                    return Err(CommandError::NotFile(target_path));
+                let target_path = args.get(2).unwrap().clone();
+                match self.is_file(&target_path) {
+                    Ok(str) => path = str,
+                    Err(e) => return Err(e),
                 }
 
                 if args[1] == ">" {
@@ -319,13 +323,12 @@ impl Shell {
 
     fn shell_cmd_touch(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 1 {
-            let path = self.to_absolute_path(args.get(0).unwrap());
-            match File::create(path) {
-                Ok(_) => {}
-                Err(e) => {
-                    print!("{e}")
-                }
-            };
+            let mut path = args.get(0).unwrap().clone();
+            match self.is_file(&path) {
+                Ok(str) => path = str,
+                Err(e) => return Err(e),
+            }
+            File::open(path).unwrap();
             return Ok(());
         }
         return Err(CommandError::WrongArgumentCount(args.len()));
@@ -333,11 +336,7 @@ impl Shell {
 
     fn shell_cmd_mkdir(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 1 {
-            let path = self.to_absolute_path(args.get(0).unwrap());
-            let dir = &path[0..path.rfind('/').unwrap_or(0)];
-            if !Path::new(dir).is_dir() {
-                return Err(CommandError::DirectoryNotFound(dir.to_string()));
-            }
+            let path = args.get(0).unwrap();
             match fs::create_dir_all(path) {
                 Ok(_) => {}
                 Err(e) => {
@@ -352,92 +351,106 @@ impl Shell {
 
     fn shell_cmd_rm(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 1 {
-            let path = self.to_absolute_path(args.get(0).unwrap());
+            let mut path = args.get(0).unwrap().clone();
             // match fs::remove_file(path) {
             //     Ok(_) => {}
             //     Err(e) => {
             //         print!("{e}")
             //     }
             // }
-            if Path::new(&path).is_file() {
-                let path_cstr = std::ffi::CString::new(path).unwrap();
-                unsafe {
-                    // libc::unlinkat(0, path_cstr.as_ptr(), 0);
-                    libc::syscall(libc::SYS_unlinkat, 0, path_cstr.as_ptr(), 0, 0, 0, 0);
-                }
-                return Ok(());
-            } else {
-                return Err(CommandError::FileNotFound(path));
+
+            match self.is_file(&path) {
+                Ok(str) => path = str,
+                Err(e) => return Err(e),
             }
+
+            let path_cstr = std::ffi::CString::new(path.clone()).unwrap();
+            unsafe {
+                libc::syscall(libc::SYS_unlinkat, 0, path_cstr.as_ptr(), 0, 0, 0, 0);
+            }
+            return Ok(());
         }
         return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     fn shell_cmd_rmdir(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 1 {
-            let path = self.to_absolute_path(args.get(0).unwrap());
-            if Path::new(&path).is_dir() {
-                let path_cstr = std::ffi::CString::new(path).unwrap();
-                unsafe { libc::unlinkat(0, path_cstr.as_ptr(), libc::AT_REMOVEDIR) };
-                return Ok(());
-            } else {
-                return Err(CommandError::DirectoryNotFound(path));
+            let mut path = args.get(0).unwrap().clone();
+            match self.is_dir(&path) {
+                Ok(str) => path = str,
+                Err(e) => return Err(e),
             }
-        } else {
-            return Err(CommandError::WrongArgumentCount(args.len()));
+
+            let path_cstr = std::ffi::CString::new(path).unwrap();
+            unsafe { libc::unlinkat(0, path_cstr.as_ptr(), libc::AT_REMOVEDIR) };
+            return Ok(());
         }
+        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     fn shell_cmd_pwd(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 0 {
             println!("{}", self.current_dir());
             return Ok(());
-        } else {
-            return Err(CommandError::WrongArgumentCount(args.len()));
         }
+        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     fn shell_cmd_cp(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 2 {
-            let src_path = self.to_absolute_path(args.get(0).unwrap());
-            let mut target_path = self.to_absolute_path(args.get(1).unwrap());
-            if !Path::new(&src_path).is_file() {
-                return Err(CommandError::NotFile(src_path));
-            };
-            let mut src_file = File::open(&src_path).unwrap();
-            let name = &src_path[src_path.rfind('/').unwrap_or(0)..];
+            let mut src_path = args.get(0).unwrap().clone();
+            let mut target_path = args.get(1).unwrap().clone();
 
-            if !Path::new(&target_path).exists() {
-                return Err(CommandError::PathNotFound(target_path));
-            } else if Path::new(&target_path).is_dir() {
+            match self.is_file(&src_path) {
+                Ok(str) => src_path = str,
+                Err(e) => return Err(e),
+            }
+
+            match self.is_file_or_dir(&target_path) {
+                Ok(str) => target_path = str,
+                Err(e) => {
+                    let prefix = &target_path[..target_path.rfind('/').unwrap_or(0)];
+                    if !Path::new(prefix).is_dir() {
+                        return Err(e);
+                    }
+                }
+            }
+
+            if Path::new(&src_path).is_dir() {
+                let mut name = &src_path[src_path.rfind('/').unwrap_or(0)..];
                 target_path = format!("{}/{}", target_path, name);
             }
+
+            let mut src_file = File::open(&src_path).unwrap();
             let mut target_file = File::create(target_path).unwrap();
             let mut buf: Vec<u8> = Vec::new();
             src_file.read_to_end(&mut buf).unwrap();
             target_file.write_all(&buf).unwrap();
             return Ok(());
-        } else {
-            return Err(CommandError::WrongArgumentCount(args.len()));
         }
+        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     pub fn shell_cmd_exec(&self, args: &Vec<String>) -> Result<(), CommandError> {
+        if args.len() <= 0 {
+            return Err(CommandError::WrongArgumentCount(args.len()));
+        }
         let path = args.get(0).unwrap();
         let mut real_path = String::new();
-        if !path.starts_with('/') {
+        if !path.starts_with('/') && !path.starts_with('.') {
             let mut prefix_collection = Env::path();
             prefix_collection.insert(0, self.current_dir());
             for prefix in prefix_collection {
-                real_path = Self::path_format(&format!("{}/{}", prefix, path));
+                real_path = format!("{}/{}", prefix, path);
                 if Path::new(&real_path).is_file() {
                     break;
                 }
             }
         }
 
-        if !Path::new(&real_path).is_file() {
-            return Err(CommandError::FileNotFound(path.clone()));
+        match self.is_file(&real_path) {
+            Ok(str) => real_path = str,
+            Err(e) => return Err(e),
         }
 
         let pid: libc::pid_t = unsafe {
@@ -445,6 +458,7 @@ impl Shell {
                 .try_into()
                 .unwrap()
         };
+
         let mut retval = 0;
         if pid == 0 {
             let path_cstr = std::ffi::CString::new(real_path).unwrap();
@@ -483,7 +497,12 @@ impl Shell {
             }
 
             if args.len() == 3 {
-                let target_path = self.to_absolute_path(args.get(2).unwrap());
+                let mut target_path = args.get(2).unwrap().clone();
+                match self.is_file(&target_path) {
+                    Ok(str) => target_path = str,
+                    Err(e) => return Err(e),
+                }
+
                 if args[1] == ">" {
                     match OpenOptions::new().write(true).open(target_path) {
                         Ok(mut file) => {
@@ -501,9 +520,8 @@ impl Shell {
                 }
             }
             return Ok(());
-        } else {
-            return Err(CommandError::WrongArgumentCount(args.len()));
         }
+        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     fn shell_cmd_reboot(&self, args: &Vec<String>) -> Result<(), CommandError> {
@@ -642,34 +660,52 @@ impl Shell {
         Ok(())
     }
 
-    fn to_absolute_path(&self, path: &String) -> String {
-        let mut fmt_path = Self::path_format(path);
+    fn path_format(&self, path: &String) -> Result<String, CommandError> {
+        let mut abs_path = path.clone();
         if !path.starts_with('/') {
-            if self.current_dir() == "/" {
-                fmt_path = format!("/{}", fmt_path);
-            } else {
-                fmt_path = format!("{}/{}", self.current_dir(), fmt_path);
-            }
+            abs_path = format!("{}/{}", self.current_dir(), abs_path);
         }
-        if fmt_path.ends_with('/') {
-            fmt_path.pop().unwrap();
+        if let Ok(path) = Path::new(path).canonicalize() {
+            let mut fmt_path = path.to_str().unwrap().to_string();
+            let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
+            let re = regex::Regex::new(r"\/{2,}").unwrap();
+            fmt_path = re.replace_all(fmt_path.as_str(), replacement).to_string();
+            return Ok(fmt_path);
+        } else {
+            return Err(CommandError::PathNotFound(path.clone()));
         }
-
-        let re = regex::Regex::new(r"\/\.\/").unwrap();
-        let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
-        fmt_path = re.replace_all(fmt_path.as_str(), replacement).to_string();
-
-        let re = regex::Regex::new(r"\/[^\/]+\/\.\.").unwrap();
-        let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
-        fmt_path = re.replace_all(fmt_path.as_str(), replacement).to_string();
-        fmt_path = Self::path_format(&fmt_path);
-        return fmt_path;
     }
 
-    fn path_format(path: &String) -> String {
-        let re = regex::Regex::new(r"\/{2,}").unwrap();
-        let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
-        let fmt_path = re.replace_all(path, replacement).to_string();
-        return fmt_path;
+    fn is_file(&self, path_str: &String) -> Result<String, CommandError> {
+        match self.path_format(path_str) {
+            Ok(path_str) => {
+                let path = Path::new(&path_str);
+                if !path.is_file() {
+                    return Err(CommandError::NotFile(path_str.clone()));
+                };
+                Ok(path_str)
+            }
+            Err(_) => Err(CommandError::FileNotFound(path_str.clone())),
+        }
+    }
+
+    fn is_dir(&self, path_str: &String) -> Result<String, CommandError> {
+        match self.path_format(path_str) {
+            Ok(path_str) => {
+                let path = Path::new(&path_str);
+                if !path.is_dir() {
+                    return Err(CommandError::NotDirectory(path_str.clone()));
+                };
+                Ok(path_str)
+            }
+            Err(_) => Err(CommandError::DirectoryNotFound(path_str.clone())),
+        }
+    }
+
+    fn is_file_or_dir(&self, path_str: &String) -> Result<String, CommandError> {
+        match self.path_format(path_str) {
+            Ok(path_str) => Ok(path_str),
+            Err(_) => Err(CommandError::PathNotFound(path_str.clone())),
+        }
     }
 }
