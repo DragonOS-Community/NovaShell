@@ -1,28 +1,41 @@
-export RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static
-export RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup
+# The toolchain we use.
+# You can get it by running DragonOS' `tools/bootstrap.sh`
+TOOLCHAIN="+nightly-2023-08-15-x86_64-unknown-linux_dragonos-gnu"
+RUSTFLAGS+="-C target-feature=+crt-static -C link-arg=-no-pie"
 
-OUTPUT_DIR = $(DADK_BUILD_CACHE_DIR_NOVA_SHELL_0_1_0)
-TMP_INSTALL_DIR=$(OUTPUT_DIR)/tmp_install
+# 如果是在dadk中编译，那么安装到dadk的安装目录中
+INSTALL_DIR?=$(DADK_CURRENT_BUILD_DIR)
+# 如果是在本地编译，那么安装到当前目录下的install目录中
+INSTALL_DIR?=./install
 
-all: build
+
+run:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) run
 
 build:
-	RUSTFLAGS='-C target-feature=+crt-static -C link-arg=-no-pie' cargo build --target=x86_64-unknown-linux-musl --release
-
-install:
-	mkdir -p $(TMP_INSTALL_DIR)
-	mkdir -p $(OUTPUT_DIR)
-
-	RUSTFLAGS='-C target-feature=+crt-static -C link-arg=-no-pie' cargo install --target=x86_64-unknown-linux-musl --path .  --root $(TMP_INSTALL_DIR)
-	mv $(TMP_INSTALL_DIR)/bin/NovaShell $(OUTPUT_DIR)/NovaShell
-	rm -rf $(TMP_INSTALL_DIR)
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build
 
 clean:
-	cargo clean
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) clean
 
+test:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) test
 
-fmt:
-	cargo fmt
+doc:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) doc
 
-fmt-check:
-	cargo fmt --check
+run-release:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) run --release
+
+build-release:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build --release
+
+clean-release:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) clean --release
+
+test-release:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) test --release
+
+.PHONY: install
+install: 
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) install --path . --no-track --root $(INSTALL_DIR) --force

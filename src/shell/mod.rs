@@ -7,7 +7,7 @@ use std::{
     vec::Vec,
 };
 
-use crate::{special_keycode::*, Env};
+use crate::{Env, SpecialKeycode};
 
 use command::{BuildInCmd, Command};
 
@@ -47,7 +47,7 @@ impl Shell {
             self.history_commands.push(buf);
             Printer::print_prompt(&self.current_dir);
             if self.readline(0) == 0 {
-                Printer::print(&[CR, LF]);
+                println!();
                 break;
             }
             let command_bytes = self.history_commands.last().unwrap().clone();
@@ -93,7 +93,7 @@ impl Shell {
             .unwrap();
         for command_line in &self.executed_commands {
             file.write_all(&command_line[..]).unwrap();
-            file.write_all(&[LF]).unwrap();
+            file.write_all(&[SpecialKeycode::LF.into()]).unwrap();
         }
     }
 
@@ -124,98 +124,62 @@ impl Shell {
             // if stdin.read(&mut key).ok() != Some(1) {
             //     continue;
             // }
-            if key[0] == 224 {
-                Self::read_char(&mut key[0]);
-                // stdin.read(&mut key).unwrap();
-                if key[0] == b'\x1b' {
-                    panic!();
-                }
-                if key[0] == UP || key[0] == DOWN {
-                    if key[0] == UP && command_index > 0 {
-                        command_index -= 1;
-                    }
-                    if key[0] == DOWN && command_index < len {
-                        command_index += 1;
-                    }
-                    let old_length = buf.len();
-                    buf = history_commands.get_mut(command_index).unwrap();
-                    Printer::replace(&buf, old_length);
-                    cursor = buf.len() - 1;
-                }
-
-                if key[0] == LEFT || key[0] == RIGHT {
-                    match key[0] {
-                        LEFT => {
-                            if cursor > 0 {
-                                Printer::set_cursor(buf, cursor, cursor - 1);
-                                cursor -= 1;
+            if let Ok(special_key) = SpecialKeycode::try_from(key[0]) {
+                match special_key {
+                    SpecialKeycode::FunctionKey => {
+                        Self::read_char(&mut key[0]);
+                        let special_key = SpecialKeycode::try_from(key[0]).unwrap();
+                        match special_key {
+                            SpecialKeycode::Up => {
+                                if command_index > 0 {
+                                    command_index -= 1;
+                                }
+                                let old_length = buf.len();
+                                buf = history_commands.get_mut(command_index).unwrap();
+                                Printer::replace(&buf, old_length);
+                                cursor = buf.len() - 1;
                             }
-                        }
 
-                        RIGHT => {
-                            if cursor < buf.len() - 1 {
-                                Printer::set_cursor(buf, cursor, cursor + 1);
-                                cursor += 1;
+                            SpecialKeycode::Down => {
+                                if command_index < len {
+                                    command_index += 1;
+                                }
+                                let old_length = buf.len();
+                                buf = history_commands.get_mut(command_index).unwrap();
+                                Printer::replace(&buf, old_length);
+                                cursor = buf.len() - 1;
                             }
-                        }
 
-                        _ => {}
+                            SpecialKeycode::Left => {
+                                if cursor > 0 {
+                                    Printer::set_cursor(buf, cursor, cursor - 1);
+                                    cursor -= 1;
+                                }
+                            }
+
+                            SpecialKeycode::Right => {
+                                if cursor < buf.len() - 1 {
+                                    Printer::set_cursor(buf, cursor, cursor + 1);
+                                    cursor += 1;
+                                }
+                            }
+
+                            SpecialKeycode::Home => {
+                                Printer::set_cursor(buf, cursor, 0);
+                            }
+
+                            SpecialKeycode::End => {
+                                Printer::set_cursor(buf, cursor, buf.len());
+                            }
+
+                            _ => {}
+                        }
                     }
-                }
-            } else {
-                if key[0] == TAB && buf.len() > 1 && buf[cursor - 1] != b' ' {
-                    let command: String = String::from_utf8(buf[..cursor].to_vec()).unwrap();
-                    let mut command_frag = command.split_ascii_whitespace().collect::<Vec<_>>();
-                    let incomplete_frag = command_frag.pop().unwrap();
-                    let mut incomplete_len: usize = incomplete_frag.len();
-                    let candidates = match command_frag.len() {
-                        0 => Printer::complete_command(incomplete_frag),
-                        1.. => {
-                            if let Some(index) = incomplete_frag.rfind('/') {
-                                incomplete_len = incomplete_frag.len() - index - 1;
-                            } else {
-                                incomplete_len = incomplete_frag.len();
-                            }
-                            Printer::complete_path(incomplete_frag)
-                        }
-                        _ => Vec::new(),
-                    };
-                    match candidates.len() {
-                        1 => {
-                            let complete_part = candidates[0][incomplete_len..].as_bytes();
 
-                            Printer::delete_from_index(cursor, buf.len());
-
-                            // stdout.write_all(complete_part).unwrap();
-                            Printer::print(complete_part);
-
-                            Printer::print_cursor(buf[cursor]);
-                            Printer::print(&buf[cursor + 1..]);
-
-                            buf.splice(cursor..cursor, complete_part.iter().cloned());
-                            cursor += candidates[0].len() - incomplete_len;
-                        }
-                        2.. => {
-                            Printer::delete_from_index(cursor, buf.len());
-                            Printer::print(&buf[cursor..buf.len()]);
-                            Printer::print(&[CR, LF]);
-                            for candidate in candidates {
-                                print!("{candidate}    ");
-                            }
-                            Printer::print(&[CR, LF]);
-                            Printer::print_prompt(&prompt);
-                            Printer::print(&buf[..buf.len() - 1]);
-                            Printer::print_cursor(b' ');
-                        }
-                        _ => {}
-                    }
-                }
-
-                match key[0] {
-                    CR | LF => {
+                    SpecialKeycode::LF | SpecialKeycode::CR => {
                         if cursor > 0 {
                             Printer::set_cursor(buf, cursor, buf.len());
-                            Printer::print(&[CR, LF]);
+                            println!();
                             let mut command = buf.clone();
                             buf = history_commands.get_mut(len).unwrap();
                             buf.clear();
@@ -224,13 +188,78 @@ impl Shell {
                             return 1;
                         }
                     }
-                    BS | DL => {
+
+                    SpecialKeycode::BackSpace => {
                         if cursor > 0 {
-                            Printer::delete(cursor, 1, buf);
+                            Printer::delete_to_cursor(cursor, 1, buf);
                             buf.remove(cursor - 1);
                             cursor -= 1;
                         }
                     }
+
+                    SpecialKeycode::Delete => {
+                        if cursor < buf.len() - 1 {
+                            Printer::delete(cursor, buf);
+                            buf.remove(cursor);
+                        }
+                    }
+
+                    SpecialKeycode::Tab => {
+                        if buf.len() > 1 && buf[cursor - 1] != b' ' {
+                            let command: String =
+                                String::from_utf8(buf[..cursor].to_vec()).unwrap();
+                            let mut command_frag =
+                                command.split_ascii_whitespace().collect::<Vec<_>>();
+                            let incomplete_frag = command_frag.pop().unwrap();
+                            let mut incomplete_len: usize = incomplete_frag.len();
+                            let candidates = match command_frag.len() {
+                                0 => Printer::complete_command(incomplete_frag),
+                                1.. => {
+                                    if let Some(index) = incomplete_frag.rfind('/') {
+                                        incomplete_len = incomplete_frag.len() - index - 1;
+                                    } else {
+                                        incomplete_len = incomplete_frag.len();
+                                    }
+                                    Printer::complete_path(incomplete_frag)
+                                }
+                                _ => Vec::new(),
+                            };
+                            match candidates.len() {
+                                1 => {
+                                    let complete_part = candidates[0][incomplete_len..].as_bytes();
+
+                                    Printer::delete_from_index(cursor, buf.len());
+
+                                    // stdout.write_all(complete_part).unwrap();
+                                    Printer::print(complete_part);
+
+                                    Printer::print_cursor(buf[cursor]);
+                                    Printer::print(&buf[cursor + 1..]);
+
+                                    buf.splice(cursor..cursor, complete_part.iter().cloned());
+                                    cursor += candidates[0].len() - incomplete_len;
+                                }
+                                2.. => {
+                                    Printer::delete_from_index(cursor, buf.len());
+                                    Printer::print(&buf[cursor..buf.len()]);
+                                    println!();
+                                    for candidate in candidates {
+                                        print!("{candidate}    ");
+                                    }
+                                    println!();
+                                    Printer::print_prompt(&prompt);
+                                    Printer::print(&buf[..buf.len() - 1]);
+                                    Printer::print_cursor(b' ');
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    _ => todo!(),
+                }
+            } else {
+                match key[0] {
                     1..=31 => {}
                     c => {
                         Printer::insert(cursor, &[c], buf);
@@ -249,17 +278,9 @@ struct Printer;
 impl Printer {
     fn print_prompt(current_dir: &String) {
         io::stdout().flush().unwrap();
-        unsafe {
-            syscall(100000, "[DragonOS]:\0".as_ptr(), 0x0000ff90, 0x00000000);
-
-            syscall(
-                100000,
-                format!("{}\0", current_dir).as_ptr(),
-                0x000088ff,
-                0x00000000,
-            );
-            print!("$ ");
-        }
+        Self::print_color("[DragonOS]:".as_bytes(), 0x0000ff90, 0x00000000);
+        Self::print_color(current_dir.as_bytes(), 0x000088ff, 0x00000000);
+        print!("$ ");
     }
 
     fn print_cursor(c: u8) {
@@ -268,7 +289,11 @@ impl Printer {
 
     fn delete_from_index(index: usize, length: usize) {
         for _i in 0..length - index {
-            Printer::print(&[BS, SPACE, BS]);
+            Printer::print(&[
+                SpecialKeycode::BackSpace.into(),
+                b' ',
+                SpecialKeycode::BackSpace.into(),
+            ]);
         }
     }
 
@@ -279,10 +304,20 @@ impl Printer {
         Printer::print(&buf[cursor + 1..]);
     }
 
-    fn delete(cursor: usize, length: usize, buf: &Vec<u8>) {
-        Printer::delete_from_index(cursor - length, buf.len());
-        Printer::print_cursor(buf[cursor]);
-        Printer::print(&buf[cursor + 1..]);
+    fn delete(cursor: usize, buf: &Vec<u8>) {
+        if cursor < buf.len() - 1 {
+            Printer::delete_from_index(cursor, buf.len());
+            Printer::print_cursor(buf[cursor + 1]);
+            Printer::print(&buf[cursor + 2..]);
+        }
+    }
+
+    fn delete_to_cursor(cursor: usize, length: usize, buf: &Vec<u8>) {
+        if cursor > 0 {
+            Printer::delete_from_index(cursor - length, buf.len());
+            Printer::print_cursor(buf[cursor]);
+            Printer::print(&buf[cursor + 1..]);
+        }
     }
 
     fn replace(bytes: &[u8], old_length: usize) {

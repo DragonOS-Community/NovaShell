@@ -3,6 +3,9 @@ extern crate libc;
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate num_derive;
+
 use std::{
     collections::HashMap,
     fs::File,
@@ -12,22 +15,38 @@ use std::{
     vec::Vec,
 };
 
+use num_enum::TryFromPrimitive;
+
 pub const ROOT_PATH: &str = "/";
 
 mod shell;
 
-pub mod special_keycode {
-    pub const LF: u8 = b'\n';
-    pub const CR: u8 = b'\r';
-    pub const DL: u8 = b'\x7f';
-    pub const BS: u8 = b'\x08';
-    pub const SPACE: u8 = b' ';
-    pub const TAB: u8 = b'\t';
+#[repr(u8)]
+#[derive(Debug, FromPrimitive, TryFromPrimitive, ToPrimitive, PartialEq, Eq, Clone)]
+#[allow(dead_code)]
+pub enum SpecialKeycode {
+    LF = b'\n',
+    CR = b'\r',
+    Delete = b'\x7f',
+    BackSpace = b'\x08',
+    Tab = b'\t',
 
-    pub const UP: u8 = 72;
-    pub const DOWN: u8 = 80;
-    pub const LEFT: u8 = 75;
-    pub const RIGHT: u8 = 77;
+    FunctionKey = 0xE0,
+    PauseBreak = 0xE1,
+
+    Up = 0x48,
+    Down = 0x50,
+    Left = 0x4B,
+    Right = 0x4D,
+
+    Home = 0x47,
+    End = 0x4F,
+}
+
+impl Into<u8> for SpecialKeycode {
+    fn into(self) -> u8 {
+        self as u8
+    }
 }
 
 struct Env(std::collections::HashMap<String, String>);
@@ -45,7 +64,7 @@ impl Env {
     }
 
     fn read_env() {
-        let env = &mut ENV.lock().unwrap().0;
+        let mut env = ENV.lock().unwrap();
         let mut file = File::open("/etc/profile").unwrap();
         let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf).unwrap();
@@ -62,7 +81,7 @@ impl Env {
             })
             .collect::<Vec<(&str, &str)>>()
         {
-            env.insert(String::from(name), String::from(value));
+            env.0.insert(String::from(name), String::from(value));
         }
     }
 
