@@ -14,7 +14,7 @@ use std::{
 
 use crate::shell::Shell;
 use crate::Env;
-use crate::{special_keycode::*, ROOT_PATH};
+use crate::ROOT_PATH;
 
 mod help;
 
@@ -274,7 +274,7 @@ impl Shell {
                 print!("{}    ", entry.file_name().into_string().unwrap());
             }
         }
-        print!("{}", String::from_utf8(vec![CR, LF]).unwrap());
+        println!();
         return Ok(());
     }
 
