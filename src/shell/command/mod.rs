@@ -294,9 +294,9 @@ impl Shell {
             }
 
             if args.len() == 3 {
-                let target_path = args.get(2).unwrap().clone();
+                let mut target_path = args.get(2).unwrap().clone();
                 match self.is_file(&target_path) {
-                    Ok(str) => path = str,
+                    Ok(str) => target_path = str,
                     Err(e) => return Err(e),
                 }
 
@@ -417,7 +417,7 @@ impl Shell {
             }
 
             if Path::new(&src_path).is_dir() {
-                let mut name = &src_path[src_path.rfind('/').unwrap_or(0)..];
+                let name = &src_path[src_path.rfind('/').unwrap_or(0)..];
                 target_path = format!("{}/{}", target_path, name);
             }
 
@@ -540,7 +540,7 @@ impl Shell {
             ));
         }
 
-        struct mstat_t {
+        struct Mstat {
             total: u64,      // 计算机的总内存数量大小
             used: u64,       // 已使用的内存大小
             free: u64,       // 空闲物理页所占的内存大小
@@ -548,9 +548,9 @@ impl Shell {
             cache_used: u64, // 位于slab缓冲区中的已使用的内存大小
             cache_free: u64, // 位于slab缓冲区中的空闲的内存大小
             available: u64,  // 系统总空闲内存大小（包括kmalloc缓冲区）
-        };
+        }
 
-        let mut mst = mstat_t {
+        let mut mst = Mstat {
             total: 0,
             used: 0,
             free: 0,
@@ -572,17 +572,23 @@ impl Shell {
         mst.free = *info.get(1).unwrap();
         mst.used = mst.total - mst.free;
 
-        print!("\ttotal\tused\tfree\tshared\tcache\tavailable\n");
+        print!("\ttotal\t\tused\t\tfree\t\tshared\t\tcache_used\tcache_free\tavailable\n");
         print!("Mem:\t");
 
         if args.len() == 0 {
             print!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t\n",
-                mst.total, mst.used, mst.free, mst.shared, mst.cache_used, mst.available
+                "{}\t\t{}\t\t{}\t\t{}\t\t{}\t\t{}\t\t{}\n",
+                mst.total,
+                mst.used,
+                mst.free,
+                mst.shared,
+                mst.cache_used,
+                mst.cache_free,
+                mst.available
             );
         } else {
             print!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t\n",
+                "{}\t\t{}\t\t{}\t\t{}\t\t{}\t\t{}\n",
                 mst.total >> 10,
                 mst.used >> 10,
                 mst.free >> 10,
@@ -652,20 +658,20 @@ impl Shell {
         }
     }
 
-    fn shell_cmd_compgen(&self, args: &Vec<String>) -> Result<(), CommandError> {
+    fn shell_cmd_compgen(&self, _args: &Vec<String>) -> Result<(), CommandError> {
         Ok(())
     }
 
-    fn shell_cmd_complete(&self, args: &Vec<String>) -> Result<(), CommandError> {
+    fn shell_cmd_complete(&self, _args: &Vec<String>) -> Result<(), CommandError> {
         Ok(())
     }
 
     fn path_format(&self, path: &String) -> Result<String, CommandError> {
         let mut abs_path = path.clone();
         if !path.starts_with('/') {
-            abs_path = format!("{}/{}", self.current_dir(), abs_path);
+            abs_path = format!("{}/{}", self.current_dir(), path);
         }
-        if let Ok(path) = Path::new(path).canonicalize() {
+        if let Ok(path) = Path::new(&abs_path).canonicalize() {
             let mut fmt_path = path.to_str().unwrap().to_string();
             let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
             let re = regex::Regex::new(r"\/{2,}").unwrap();
