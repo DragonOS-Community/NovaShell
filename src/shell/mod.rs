@@ -1,7 +1,6 @@
-use libc::syscall;
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Write},
     print,
     string::String,
     vec::Vec,
@@ -106,8 +105,7 @@ impl Shell {
         *byte = c;
     }
 
-    fn readline(&mut self, fd: usize) -> usize {
-        let mut stdin = std::io::stdin();
+    fn readline(&mut self, _fd: usize) -> usize {
         let mut stdout = std::io::stdout();
         let prompt: String = self.current_dir.clone();
         let history_commands = &mut self.history_commands;
