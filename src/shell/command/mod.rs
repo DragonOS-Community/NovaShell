@@ -442,8 +442,9 @@ impl Shell {
             let mut dir_collection = Env::path();
             dir_collection.insert(0, self.current_dir());
             for dir in dir_collection {
-                real_path = format!("{}/{}", dir, path);
-                if Path::new(&real_path).is_file() {
+                let possible_path = format!("{}/{}", dir, path);
+                if Path::new(&path).is_file() {
+                    real_path = possible_path;
                     break;
                 }
             }
