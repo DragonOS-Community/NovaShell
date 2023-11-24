@@ -50,12 +50,12 @@ impl Shell {
                 break;
             }
             let command_bytes = self.history_commands.last().unwrap().clone();
-            let mut temp = command_bytes.clone();
-            temp.retain(|byte| *byte != b' ');
-            if temp.len() == 0 {
+            if command_bytes.starts_with(&[b' ']) {
                 self.history_commands.pop().unwrap();
             } else {
                 self.executed_commands.push(command_bytes.clone());
+            }
+            if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_command_in_bytes(&command_bytes);
             }
         }
@@ -175,16 +175,14 @@ impl Shell {
                     }
 
                     SpecialKeycode::LF | SpecialKeycode::CR => {
-                        if cursor > 0 {
-                            Printer::set_cursor(buf, cursor, buf.len());
-                            println!();
-                            let mut command = buf.clone();
-                            buf = history_commands.get_mut(len).unwrap();
-                            buf.clear();
-                            buf.append(&mut command);
+                        Printer::set_cursor(buf, cursor, buf.len());
+                        println!();
+                        let mut command = buf.clone();
+                        buf = history_commands.get_mut(len).unwrap();
+                        buf.clear();
+                        buf.append(&mut command);
 
-                            return 1;
-                        }
+                        return 1;
                     }
 
                     SpecialKeycode::BackSpace => {

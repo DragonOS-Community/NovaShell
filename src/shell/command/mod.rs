@@ -432,25 +432,29 @@ impl Shell {
     }
 
     pub fn shell_cmd_exec(&self, args: &Vec<String>) -> Result<(), CommandError> {
+        let mut args = args.clone();
         if args.len() <= 0 {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
         let path = args.get(0).unwrap();
         let mut real_path = String::new();
-        if !path.starts_with('/') && !path.starts_with('.') {
-            let mut prefix_collection = Env::path();
-            prefix_collection.insert(0, self.current_dir());
-            for prefix in prefix_collection {
-                real_path = format!("{}/{}", prefix, path);
+        if !path.contains('/') {
+            let mut dir_collection = Env::path();
+            dir_collection.insert(0, self.current_dir());
+            for dir in dir_collection {
+                real_path = format!("{}/{}", dir, path);
                 if Path::new(&real_path).is_file() {
                     break;
                 }
             }
-        }
-
-        match self.is_file(&real_path) {
-            Ok(str) => real_path = str,
-            Err(e) => return Err(e),
+            if real_path.is_empty() {
+                return Err(CommandError::FileNotFound(path.clone()));
+            }
+        } else {
+            match self.is_file(path) {
+                Ok(path) => real_path = path,
+                Err(e) => return Err(e),
+            }
         }
 
         let pid: libc::pid_t = unsafe {
@@ -459,23 +463,22 @@ impl Shell {
                 .unwrap()
         };
 
+        let name = &real_path[real_path.rfind('/').unwrap_or(0)..];
+        *args.get_mut(0).unwrap() = name.to_string();
         let mut retval = 0;
         if pid == 0 {
             let path_cstr = std::ffi::CString::new(real_path).unwrap();
-            let mut argv: *const *const i8 = std::ptr::null();
-            if args.len() > 1 {
-                let args_cstr = args
-                    .iter()
-                    .skip(1)
-                    .map(|str| std::ffi::CString::new(str.as_str()).unwrap())
-                    .collect::<Vec<std::ffi::CString>>();
-                let mut args_ptr = args_cstr
-                    .iter()
-                    .map(|c_str| c_str.as_ptr())
-                    .collect::<Vec<*const i8>>();
-                args_ptr.push(std::ptr::null());
-                argv = args_ptr.as_ptr();
-            }
+            let args_cstr = args
+                .iter()
+                .map(|str| std::ffi::CString::new(str.as_str()).unwrap())
+                .collect::<Vec<std::ffi::CString>>();
+            let mut args_ptr = args_cstr
+                .iter()
+                .map(|c_str| c_str.as_ptr())
+                .collect::<Vec<*const i8>>();
+            args_ptr.push(std::ptr::null());
+            let argv = args_ptr.as_ptr();
+
             unsafe {
                 libc::execv(path_cstr.as_ptr(), argv);
             }
