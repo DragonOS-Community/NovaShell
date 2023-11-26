@@ -7,6 +7,8 @@ extern crate lazy_static;
 #[macro_use]
 extern crate num_derive;
 
+mod shell;
+
 use std::{
     collections::HashMap,
     fs::File,
@@ -15,12 +17,11 @@ use std::{
     string::String,
     vec::Vec,
 };
-
 use num_enum::TryFromPrimitive;
+use shell::Shell;
 
 pub const ROOT_PATH: &str = "/";
-
-mod shell;
+pub const ENV_FILE_PATH: &str = "/etc/profile";
 
 #[repr(u8)]
 #[derive(Debug, FromPrimitive, TryFromPrimitive, ToPrimitive, PartialEq, Eq, Clone)]
@@ -58,7 +59,7 @@ lazy_static! {
 
 impl Env {
     fn init_env() {
-        let mut file = File::create("/etc/profile").unwrap();
+        let mut file = File::create(ENV_FILE_PATH).unwrap();
         file.write_all("PATH=/bin:/usr/bin:/usr/local/bin\n".as_bytes())
             .unwrap();
         file.write_all("PWD=/\n".as_bytes()).unwrap();
@@ -66,7 +67,7 @@ impl Env {
 
     fn read_env() {
         let mut env = ENV.lock().unwrap();
-        let mut file = File::open("/etc/profile").unwrap();
+        let mut file = File::open(ENV_FILE_PATH).unwrap();
         let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf).unwrap();
         for (name, value) in String::from_utf8(buf)
@@ -113,9 +114,12 @@ impl Env {
 }
 
 fn main() {
-    Env::init_env();
+    if !Path::new(ENV_FILE_PATH).exists() {
+        Env::init_env();
+    }
+
     Env::read_env();
-    let mut shell = shell::Shell::new();
+    let mut shell = Shell::new();
     shell.exec();
     return;
 }
