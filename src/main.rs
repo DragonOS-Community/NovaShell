@@ -9,6 +9,8 @@ extern crate num_derive;
 
 mod shell;
 
+use num_enum::TryFromPrimitive;
+use shell::Shell;
 use std::{
     collections::HashMap,
     fs::File,
@@ -17,8 +19,6 @@ use std::{
     string::String,
     vec::Vec,
 };
-use num_enum::TryFromPrimitive;
-use shell::Shell;
 
 pub const ROOT_PATH: &str = "/";
 pub const ENV_FILE_PATH: &str = "/etc/profile";

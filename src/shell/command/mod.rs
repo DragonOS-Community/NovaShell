@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::shell::Shell;
-use crate::{Env, ENV_FILE_PATH};
 use crate::ROOT_PATH;
+use crate::{Env, ENV_FILE_PATH};
 
 mod help;
 
