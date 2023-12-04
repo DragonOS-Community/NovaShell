@@ -58,15 +58,21 @@ lazy_static! {
 }
 
 impl Env {
-    fn init_env() {
+    /// 初始化环境变量文件
+    fn init_envfile() {
         let mut file = File::create(ENV_FILE_PATH).unwrap();
         file.write_all("PATH=/bin:/usr/bin:/usr/local/bin\n".as_bytes())
             .unwrap();
         file.write_all("PWD=/\n".as_bytes()).unwrap();
     }
 
+    /// 读取环境变量文件
+    /// 如果文件不存在则创建
     fn read_env() {
         let mut env = ENV.lock().unwrap();
+        if !Path::new(ENV_FILE_PATH).exists() {
+            Env::init_envfile();
+        }
         let mut file = File::open(ENV_FILE_PATH).unwrap();
         let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf).unwrap();
@@ -114,10 +120,6 @@ impl Env {
 }
 
 fn main() {
-    if !Path::new(ENV_FILE_PATH).exists() {
-        Env::init_env();
-    }
-
     Env::read_env();
     let mut shell = Shell::new();
     shell.exec();

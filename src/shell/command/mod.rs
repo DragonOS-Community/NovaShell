@@ -187,7 +187,6 @@ impl Shell {
             "env" => self.shell_cmd_env(args),
             "compgen" => self.shell_cmd_compgen(args),
             "complete" => self.shell_cmd_complete(args),
-            "init-env" => self.shell_init_env(args),
 
             _ => Err(CommandError::CommandNotFound(String::from(cmd))),
         }
@@ -668,11 +667,6 @@ impl Shell {
     }
 
     fn shell_cmd_complete(&self, _args: &Vec<String>) -> Result<(), CommandError> {
-        Ok(())
-    }
-
-    fn shell_init_env(&self, _args: &Vec<String>) -> Result<(), CommandError> {
-        Env::init_env();
         Ok(())
     }
 
