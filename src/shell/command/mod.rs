@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::shell::Shell;
-use crate::Env;
 use crate::ROOT_PATH;
+use crate::{Env, ENV_FILE_PATH};
 
 mod help;
 
@@ -663,7 +663,7 @@ impl Shell {
 
     fn shell_cmd_env(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 0 {
-            let mut file = File::open("/etc/profile").unwrap();
+            let mut file = File::open(ENV_FILE_PATH).unwrap();
             let mut buf: Vec<u8> = Vec::new();
             file.read_to_end(&mut buf).unwrap();
             println!("{}", String::from_utf8(buf).unwrap());
