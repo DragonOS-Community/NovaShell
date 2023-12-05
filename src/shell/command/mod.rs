@@ -18,11 +18,13 @@ use crate::{Env, ENV_FILE_PATH};
 
 mod help;
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum CommandType {
     InternalCommand(BuildInCmd),
     ExternalCommand(String),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Command {
     args: Vec<String>,
     cmd_type: CommandType,
@@ -119,7 +121,8 @@ impl Command {
                 None => args.push(arg),
             }
         }
-        Command::new(name, args)
+        let cmd = Command::new(name, args);
+        return cmd;
     }
 
     pub fn from_strings(str: String) -> Vec<Command> {
@@ -135,6 +138,7 @@ impl Command {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BuildInCmd(pub &'static str);
 
 impl BuildInCmd {
@@ -197,7 +201,7 @@ impl Shell {
         full_args.insert(0, path.clone());
         self.shell_cmd_exec(&full_args).unwrap_or_else(|e| {
             let err = match e {
-                CommandError::FileNotFound(_) => CommandError::CommandNotFound(path.clone()),
+                CommandError::FileNotFound(rp) => CommandError::CommandNotFound(rp),
                 _ => e,
             };
             CommandError::handle(err);
@@ -432,6 +436,7 @@ impl Shell {
     }
 
     pub fn shell_cmd_exec(&self, args: &Vec<String>) -> Result<(), CommandError> {
+        // println!("shell_cmd_exec: {:?}", args);
         let mut args = args.clone();
         if args.len() <= 0 {
             return Err(CommandError::WrongArgumentCount(args.len()));
@@ -443,7 +448,7 @@ impl Shell {
             dir_collection.insert(0, self.current_dir());
             for dir in dir_collection {
                 let possible_path = format!("{}/{}", dir, path);
-                if Path::new(&path).is_file() {
+                if Path::new(&possible_path).is_file() {
                     real_path = possible_path;
                     break;
                 }
@@ -458,13 +463,19 @@ impl Shell {
             }
         }
 
+        // 如果文件不存在，返回错误
+        if !Path::new(&real_path).is_file() {
+            // println!("{}: command not found", real_path);
+            return Err(CommandError::FileNotFound(real_path.clone()));
+        }
+
         let pid: libc::pid_t = unsafe {
             libc::syscall(libc::SYS_fork, 0, 0, 0, 0, 0, 0)
                 .try_into()
                 .unwrap()
         };
 
-        let name = &real_path[real_path.rfind('/').unwrap_or(0)..];
+        let name = &real_path[real_path.rfind('/').map(|pos| pos + 1).unwrap_or(0)..];
         *args.get_mut(0).unwrap() = name.to_string();
         let mut retval = 0;
         if pid == 0 {
