@@ -627,7 +627,7 @@ impl Shell {
                 }
             }
             unsafe {
-                libc::kill(pid, libc::SIGKILL);
+                libc::kill(pid, libc::SIGTERM);
             }
             return Ok(());
         } else {
