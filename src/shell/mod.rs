@@ -216,7 +216,10 @@ impl Shell {
                                     } else {
                                         incomplete_len = incomplete_frag.len();
                                     }
-                                    Printer::complete_path(incomplete_frag)
+                                    Printer::complete_path(
+                                        format!("{}/{}", self.current_dir, incomplete_frag)
+                                            .as_str(),
+                                    )
                                 }
                                 _ => Vec::new(),
                             };
@@ -240,7 +243,16 @@ impl Shell {
                                     Printer::print(&buf[cursor..buf.len()]);
                                     println!();
                                     for candidate in candidates {
-                                        print!("{candidate}    ");
+                                        if candidate.ends_with('/') {
+                                            crate::shell::Printer::print_color(
+                                                candidate.as_bytes(),
+                                                0x000088ff,
+                                                0x00000000,
+                                            );
+                                            print!("    ");
+                                        } else {
+                                            print!("{candidate}    ");
+                                        }
                                     }
                                     println!();
                                     Printer::print_prompt(&prompt);
@@ -358,6 +370,7 @@ impl Printer {
     }
 
     fn complete_path(path: &str) -> Vec<String> {
+        // println!("{}", path);
         let mut candidates: Vec<String> = Vec::new();
         let dir: &str;
         let incomplete_name: &str;

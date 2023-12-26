@@ -244,21 +244,14 @@ impl Shell {
     }
 
     fn shell_cmd_ls(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        let mut path = String::new();
-        if args.len() == 0 {
-            path = self.current_dir();
-        }
-        if args.len() == 1 {
-            path = args.get(0).unwrap().clone();
-            match self.is_dir(&path) {
-                Ok(str) => path = str,
+        let path: String = match args.len() {
+            0 => self.current_dir(),
+            1 => match self.is_dir(args.get(0).unwrap()) {
+                Ok(str) => str,
                 Err(e) => return Err(e),
-            }
-        }
-
-        if path.is_empty() {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
+            },
+            _ => return Err(CommandError::WrongArgumentCount(args.len())),
+        };
 
         let dir: fs::ReadDir;
         match fs::read_dir(Path::new(&path)) {
