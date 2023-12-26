@@ -320,12 +320,26 @@ impl Shell {
 
     fn shell_cmd_touch(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 1 {
-            let mut path = args.get(0).unwrap().clone();
-            match self.is_file(&path) {
-                Ok(str) => path = str,
-                Err(e) => return Err(e),
-            }
-            File::open(path).unwrap();
+            let path = args.get(0).unwrap();
+
+            //路径中提取目录和文件名
+            let dir = &path[..path.rfind('/').unwrap_or(0)];
+            let file_name = &path[path.rfind('/').unwrap_or(0)..];
+
+            //判断文件所在目录是否存在
+            match self.is_dir(&dir.to_string()) {
+                Ok(str) => {
+                    let abs_path = format!("{}/{}", str, file_name);
+                    //判断文件是否存在，存在时不操作,不存在时创建文件
+                    if !Path::new(&abs_path).exists() {
+                        File::create(&abs_path).unwrap();
+                    }
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+
             return Ok(());
         }
         return Err(CommandError::WrongArgumentCount(args.len()));
