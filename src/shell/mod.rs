@@ -175,6 +175,7 @@ impl Shell {
                     }
 
                     SpecialKeycode::LF | SpecialKeycode::CR => {
+                        // println!("buf:{:?}\tcursor:{}\tbuf.len():{}", buf, cursor, buf.len());
                         Printer::set_cursor(buf, cursor, buf.len());
                         println!();
                         let mut command = buf.clone();
@@ -216,10 +217,7 @@ impl Shell {
                                     } else {
                                         incomplete_len = incomplete_frag.len();
                                     }
-                                    Printer::complete_path(
-                                        format!("{}/{}", self.current_dir, incomplete_frag)
-                                            .as_str(),
-                                    )
+                                    Printer::complete_path(self.current_dir.as_str(), incomplete_frag)
                                 }
                                 _ => Vec::new(),
                             };
@@ -258,6 +256,7 @@ impl Shell {
                                     Printer::print_prompt(&prompt);
                                     Printer::print(&buf[..buf.len() - 1]);
                                     Printer::print_cursor(b' ');
+                                    Printer::set_cursor(buf, buf.len(), cursor);
                                 }
                                 _ => {}
                             }
@@ -369,8 +368,13 @@ impl Printer {
         candidates
     }
 
-    fn complete_path(path: &str) -> Vec<String> {
-        // println!("{}", path);
+    fn complete_path(current_dir: &str, incomplete_path: &str) -> Vec<String> {
+        let path = if incomplete_path.starts_with('/') {
+            String::from(incomplete_path)
+        } else {
+            format!("{}/{}", current_dir, incomplete_path)
+        };
+
         let mut candidates: Vec<String> = Vec::new();
         let dir: &str;
         let incomplete_name: &str;
