@@ -217,7 +217,10 @@ impl Shell {
                                     } else {
                                         incomplete_len = incomplete_frag.len();
                                     }
-                                    Printer::complete_path(self.current_dir.as_str(), incomplete_frag)
+                                    Printer::complete_path(
+                                        self.current_dir.as_str(),
+                                        incomplete_frag,
+                                    )
                                 }
                                 _ => Vec::new(),
                             };
