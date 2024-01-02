@@ -1,4 +1,5 @@
 use help::Help;
+use path_clean::PathClean;
 use regex::{Captures, Regex};
 use std::intrinsics::unlikely;
 use std::io::Read;
@@ -233,13 +234,14 @@ impl Shell {
             1 => self.is_dir(args.get(0).unwrap())?,
             _ => return Err(CommandError::WrongArgumentCount(args.len())),
         };
-        self.set_current_dir(&path);
+        println!("{}", path);
+        self.chdir(&path);
         Ok(())
     }
 
     fn shell_cmd_ls(&self, args: &Vec<String>) -> Result<(), CommandError> {
         let path = match args.len() {
-            0 => self.current_dir(),
+            0 => Self::current_dir(),
             1 => self.is_dir(args.get(0).unwrap())?,
             _ => return Err(CommandError::WrongArgumentCount(args.len())),
         };
@@ -362,7 +364,7 @@ impl Shell {
         if unlikely(args.len() != 0) {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
-        println!("{}", self.current_dir());
+        println!("{}", Self::current_dir());
         Ok(())
     }
 
@@ -411,7 +413,7 @@ impl Shell {
         let mut real_path = String::new();
         if !path.contains('/') {
             let mut dir_collection = Env::path();
-            dir_collection.insert(0, self.current_dir());
+            dir_collection.insert(0, Self::current_dir());
             for dir in dir_collection {
                 let possible_path = format!("{}/{}", dir, path);
                 if Path::new(&possible_path).is_file() {
@@ -652,17 +654,14 @@ impl Shell {
     fn path_format(&self, path: &String) -> Result<String, CommandError> {
         let mut abs_path = path.clone();
         if !path.starts_with('/') {
-            abs_path = format!("{}/{}", self.current_dir(), path);
+            abs_path = format!("{}/{}", Self::current_dir(), path);
         }
-        if let Ok(path) = Path::new(&abs_path).canonicalize() {
-            let mut fmt_path = path.to_str().unwrap().to_string();
-            let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
-            let re = regex::Regex::new(r"\/{2,}").unwrap();
-            fmt_path = re.replace_all(fmt_path.as_str(), replacement).to_string();
-            return Ok(fmt_path);
-        } else {
-            return Err(CommandError::PathNotFound(path.clone()));
-        }
+        let path = Path::new(&abs_path).clean();
+        let mut fmt_path = path.to_str().unwrap().to_string();
+        let replacement = |_caps: &regex::Captures| -> String { String::from("/") };
+        let re = regex::Regex::new(r"\/{2,}").unwrap();
+        fmt_path = re.replace_all(fmt_path.as_str(), replacement).to_string();
+        return Ok(fmt_path);
     }
 
     fn is_file(&self, path_str: &String) -> Result<String, CommandError> {
@@ -681,7 +680,9 @@ impl Shell {
     fn is_dir(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => {
+                println!("{}", path_str);
                 let path = Path::new(&path_str);
+                println!("{:?}", path);
                 if !path.is_dir() {
                     return Err(CommandError::NotDirectory(path_str.clone()));
                 };
