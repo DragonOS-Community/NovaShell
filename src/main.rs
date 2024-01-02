@@ -1,4 +1,6 @@
 #![allow(non_snake_case)]
+#![feature(core_intrinsics)]
+
 extern crate libc;
 
 #[macro_use]

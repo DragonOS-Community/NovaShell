@@ -1,12 +1,13 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
+    path::Path,
     print,
     string::String,
     vec::Vec,
 };
 
-use crate::{Env, SpecialKeycode};
+use crate::SpecialKeycode;
 
 use command::{BuildInCmd, Command};
 
@@ -15,7 +16,6 @@ pub mod command;
 pub struct Shell {
     history_commands: Vec<Vec<u8>>,
     executed_commands: Vec<Vec<u8>>,
-    current_dir: String,
 }
 
 impl Shell {
@@ -23,19 +23,24 @@ impl Shell {
         let mut shell = Shell {
             history_commands: Vec::new(),
             executed_commands: Vec::new(),
-            current_dir: String::from("/"),
         };
         shell.read_commands();
         shell
     }
 
-    pub fn current_dir(&self) -> String {
-        self.current_dir.clone()
+    pub fn current_dir() -> String {
+        std::env::current_dir()
+            .expect("Error getting current directory")
+            .to_str()
+            .unwrap()
+            .to_string()
     }
 
-    pub fn set_current_dir(&mut self, new_dir: &String) {
-        self.current_dir = new_dir.clone();
-        Env::insert(String::from("PWD"), self.current_dir());
+    pub fn chdir(&mut self, new_dir: &String) {
+        let path = Path::new(&new_dir);
+        if let Err(e) = std::env::set_current_dir(&path) {
+            eprintln!("Error changing directory: {}", e);
+        }
     }
 
     pub fn exec(&mut self) {
@@ -44,7 +49,7 @@ impl Shell {
             buf = Vec::new();
             buf.push(b' ');
             self.history_commands.push(buf);
-            Printer::print_prompt(&self.current_dir);
+            Printer::print_prompt(&Self::current_dir());
             if self.readline(0) == 0 {
                 println!();
                 break;
@@ -107,12 +112,11 @@ impl Shell {
 
     fn readline(&mut self, _fd: usize) -> usize {
         let mut stdout = std::io::stdout();
-        let prompt: String = self.current_dir.clone();
-        let history_commands = &mut self.history_commands;
-        let len = history_commands.len() - 1;
+        let prompt: String = Self::current_dir().clone();
+        let len = self.history_commands.len() - 1;
         let mut key: [u8; 1] = [0];
         let mut command_index = len;
-        let mut buf = history_commands.get_mut(command_index).unwrap();
+        let mut buf = self.history_commands.get_mut(command_index).unwrap();
         let mut cursor = 0;
 
         Printer::print_cursor(b' ');
@@ -133,7 +137,7 @@ impl Shell {
                                     command_index -= 1;
                                 }
                                 let old_length = buf.len();
-                                buf = history_commands.get_mut(command_index).unwrap();
+                                buf = self.history_commands.get_mut(command_index).unwrap();
                                 Printer::replace(&buf, old_length);
                                 cursor = buf.len() - 1;
                             }
@@ -143,7 +147,7 @@ impl Shell {
                                     command_index += 1;
                                 }
                                 let old_length = buf.len();
-                                buf = history_commands.get_mut(command_index).unwrap();
+                                buf = self.history_commands.get_mut(command_index).unwrap();
                                 Printer::replace(&buf, old_length);
                                 cursor = buf.len() - 1;
                             }
@@ -175,10 +179,11 @@ impl Shell {
                     }
 
                     SpecialKeycode::LF | SpecialKeycode::CR => {
+                        // println!("buf:{:?}\tcursor:{}\tbuf.len():{}", buf, cursor, buf.len());
                         Printer::set_cursor(buf, cursor, buf.len());
                         println!();
                         let mut command = buf.clone();
-                        buf = history_commands.get_mut(len).unwrap();
+                        buf = self.history_commands.get_mut(len).unwrap();
                         buf.clear();
                         buf.append(&mut command);
 
@@ -217,8 +222,8 @@ impl Shell {
                                         incomplete_len = incomplete_frag.len();
                                     }
                                     Printer::complete_path(
-                                        format!("{}/{}", self.current_dir, incomplete_frag)
-                                            .as_str(),
+                                        Self::current_dir().as_str(),
+                                        incomplete_frag,
                                     )
                                 }
                                 _ => Vec::new(),
@@ -258,6 +263,7 @@ impl Shell {
                                     Printer::print_prompt(&prompt);
                                     Printer::print(&buf[..buf.len() - 1]);
                                     Printer::print_cursor(b' ');
+                                    Printer::set_cursor(buf, buf.len(), cursor);
                                 }
                                 _ => {}
                             }
@@ -369,8 +375,13 @@ impl Printer {
         candidates
     }
 
-    fn complete_path(path: &str) -> Vec<String> {
-        // println!("{}", path);
+    fn complete_path(current_dir: &str, incomplete_path: &str) -> Vec<String> {
+        let path = if incomplete_path.starts_with('/') {
+            String::from(incomplete_path)
+        } else {
+            format!("{}/{}", current_dir, incomplete_path)
+        };
+
         let mut candidates: Vec<String> = Vec::new();
         let dir: &str;
         let incomplete_name: &str;
