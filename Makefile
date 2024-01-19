@@ -37,5 +37,5 @@ test-release:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) test --release
 
 .PHONY: install
-install: 
+install:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) install --path . --no-track --root $(INSTALL_DIR) --force

@@ -36,7 +36,7 @@ impl Shell {
             .to_string()
     }
 
-    pub fn chdir(&mut self, new_dir: &String) {
+    pub fn chdir(new_dir: &String) {
         let path = Path::new(&new_dir);
         if let Err(e) = std::env::set_current_dir(&path) {
             eprintln!("Error changing directory: {}", e);
@@ -50,7 +50,7 @@ impl Shell {
             buf.push(b' ');
             self.history_commands.push(buf);
             Printer::print_prompt(&Self::current_dir());
-            if self.readline(0) == 0 {
+            if self.readline() == 0 {
                 println!();
                 break;
             }
@@ -71,7 +71,7 @@ impl Shell {
         let commands = Command::from_strings(String::from_utf8(command_bytes.clone()).unwrap());
         commands
             .iter()
-            .for_each(|command| self.exec_command(command));
+            .for_each(|command| Self::exec_command(command));
     }
 
     fn read_commands(&mut self) {
@@ -110,7 +110,7 @@ impl Shell {
         *byte = c;
     }
 
-    fn readline(&mut self, _fd: usize) -> usize {
+    fn readline(&mut self) -> usize {
         let mut stdout = std::io::stdout();
         let prompt: String = Self::current_dir().clone();
         let len = self.history_commands.len() - 1;

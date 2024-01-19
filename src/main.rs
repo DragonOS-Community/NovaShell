@@ -1,32 +1,27 @@
 #![allow(non_snake_case)]
 #![feature(core_intrinsics)]
 
-extern crate libc;
-
-#[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
-extern crate num_derive;
-
 mod shell;
 
+use lazy_static::lazy_static;
 use num_enum::TryFromPrimitive;
-use shell::Shell;
 use std::{
     collections::HashMap,
     fs::File,
     io::{Read, Write},
     path::Path,
     string::String,
+    sync::Mutex,
     vec::Vec,
 };
+
+use shell::Shell;
 
 pub const ROOT_PATH: &str = "/";
 pub const ENV_FILE_PATH: &str = "/etc/profile";
 
 #[repr(u8)]
-#[derive(Debug, FromPrimitive, TryFromPrimitive, ToPrimitive, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
 #[allow(dead_code)]
 pub enum SpecialKeycode {
     LF = b'\n',
@@ -53,10 +48,10 @@ impl Into<u8> for SpecialKeycode {
     }
 }
 
-struct Env(std::collections::HashMap<String, String>);
+struct Env(HashMap<String, String>);
 
 lazy_static! {
-    static ref ENV: std::sync::Mutex<Env> = std::sync::Mutex::new(Env(HashMap::new()));
+    static ref ENV: Mutex<Env> = Mutex::new(Env(HashMap::new()));
 }
 
 impl Env {
