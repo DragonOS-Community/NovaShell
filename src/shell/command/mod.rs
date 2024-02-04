@@ -14,9 +14,8 @@ use std::{
     vec::Vec,
 };
 
+use crate::env::{Env, ENV_FILE_PATH, ROOT_PATH};
 use crate::shell::Shell;
-use crate::ROOT_PATH;
-use crate::{Env, ENV_FILE_PATH};
 
 mod help;
 
@@ -234,7 +233,6 @@ impl Shell {
             1 => self.is_dir(args.get(0).unwrap())?,
             _ => return Err(CommandError::WrongArgumentCount(args.len())),
         };
-        println!("{}", path);
         self.chdir(&path);
         Ok(())
     }
@@ -680,9 +678,7 @@ impl Shell {
     fn is_dir(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => {
-                println!("{}", path_str);
                 let path = Path::new(&path_str);
-                println!("{:?}", path);
                 if !path.is_dir() {
                     return Err(CommandError::NotDirectory(path_str.clone()));
                 };
