@@ -61,13 +61,13 @@ impl Shell {
                 self.executed_commands.push(command_bytes.clone());
             }
             if !command_bytes.iter().all(|&byte| byte == b' ') {
-                self.exec_command_in_bytes(&command_bytes);
+                self.exec_commands_in_line(&command_bytes);
             }
         }
         self.write_commands();
     }
 
-    fn exec_command_in_bytes(&mut self, command_bytes: &Vec<u8>) {
+    fn exec_commands_in_line(&mut self, command_bytes: &Vec<u8>) {
         let commands = Command::from_strings(String::from_utf8(command_bytes.clone()).unwrap());
         commands
             .iter()

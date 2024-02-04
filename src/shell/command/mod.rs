@@ -96,12 +96,18 @@ impl Command {
     }
 
     fn from_string(str: String) -> Result<Command, CommandError> {
-        let regex: Regex = Regex::new(r#"([^\s'"]|("[^"]*"|'[^']*'))+"#).unwrap();
+        let regex: Regex = Regex::new(r#"'.*'|".*"|[^\s]+"#).unwrap();
         let hay = str.clone();
-        let mut iter = regex
-            .captures_iter(hay.as_str())
-            .map(|c| String::from(c.get(0).unwrap().as_str()));
-        // let mut iter = str.split_ascii_whitespace();
+        let mut iter = regex.captures_iter(hay.as_str()).map(|c| {
+            let str = c.get(0).unwrap().as_str();
+            if str.starts_with(|char| char == '\'' || char == '\"')
+                && str.ends_with(|char| char == '\'' || char == '\"')
+            {
+                return str[1..str.len() - 1].to_string();
+            } else {
+                return str.to_string();
+            }
+        });
         let name = iter.next().unwrap();
         let re: Regex = Regex::new(r"\$[\w_]+").unwrap();
         let replacement = |caps: &Captures| -> String {
