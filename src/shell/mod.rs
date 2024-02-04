@@ -7,7 +7,7 @@ use std::{
     vec::Vec,
 };
 
-use crate::SpecialKeycode;
+use crate::keycode::{FunctionKeySuffix, SpecialKeycode};
 
 use command::{BuildInCmd, Command};
 
@@ -128,11 +128,11 @@ impl Shell {
             // }
             if let Ok(special_key) = SpecialKeycode::try_from(key[0]) {
                 match special_key {
-                    SpecialKeycode::FunctionKey => {
+                    SpecialKeycode::FunctionKeyPrefix => {
                         Self::read_char(&mut key[0]);
-                        let special_key = SpecialKeycode::try_from(key[0]).unwrap();
-                        match special_key {
-                            SpecialKeycode::Up => {
+                        let function_key = FunctionKeySuffix::try_from(key[0]).unwrap();
+                        match function_key {
+                            FunctionKeySuffix::Up => {
                                 if command_index > 0 {
                                     command_index -= 1;
                                 }
@@ -142,7 +142,7 @@ impl Shell {
                                 cursor = buf.len() - 1;
                             }
 
-                            SpecialKeycode::Down => {
+                            FunctionKeySuffix::Down => {
                                 if command_index < len {
                                     command_index += 1;
                                 }
@@ -152,29 +152,27 @@ impl Shell {
                                 cursor = buf.len() - 1;
                             }
 
-                            SpecialKeycode::Left => {
+                            FunctionKeySuffix::Left => {
                                 if cursor > 0 {
                                     Printer::set_cursor(buf, cursor, cursor - 1);
                                     cursor -= 1;
                                 }
                             }
 
-                            SpecialKeycode::Right => {
+                            FunctionKeySuffix::Right => {
                                 if cursor < buf.len() - 1 {
                                     Printer::set_cursor(buf, cursor, cursor + 1);
                                     cursor += 1;
                                 }
                             }
 
-                            SpecialKeycode::Home => {
+                            FunctionKeySuffix::Home => {
                                 Printer::set_cursor(buf, cursor, 0);
                             }
 
-                            SpecialKeycode::End => {
+                            FunctionKeySuffix::End => {
                                 Printer::set_cursor(buf, cursor, buf.len());
                             }
-
-                            _ => {}
                         }
                     }
 
@@ -270,7 +268,7 @@ impl Shell {
                         }
                     }
 
-                    _ => todo!(),
+                    _ => {}
                 }
             } else {
                 match key[0] {
