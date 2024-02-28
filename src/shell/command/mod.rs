@@ -1,7 +1,6 @@
 use help::Help;
 use path_clean::PathClean;
 use regex::{Captures, Regex};
-use std::fmt;
 use std::intrinsics::unlikely;
 use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
@@ -97,7 +96,7 @@ impl Command {
     }
 
     fn from_string(str: String) -> Result<Command, CommandError> {
-        let regex: Regex = Regex::new(r#"'.*'|".*"|\;|[^\s]+"#).unwrap();
+        let regex: Regex = Regex::new(r#"'.*'|".*"|[^\s]+"#).unwrap();
         let hay = str.clone();
         let mut iter = regex.captures_iter(hay.as_str()).map(|c| {
             let str = c.get(0).unwrap().as_str();
@@ -345,12 +344,9 @@ impl Shell {
         }else{
             target_path=&opt_path;
         } 
-        
-        println!("mkdir:{:?}",&target_path);
         if let Err(e) = fs::create_dir_all(target_path) {
             print!("{e}")
         }
-        println!("mkdir works fine");
         Ok(())
     }
 
