@@ -335,8 +335,16 @@ impl Shell {
         if unlikely(args.len() != 1) {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
+        let nowpath = Self::current_dir();
         let path = args.get(0).unwrap();
-        if let Err(e) = fs::create_dir_all(path) {
+        let opt_path = nowpath + "/" + path;
+        let target_path;
+        if path.starts_with("/") {
+            target_path = path;
+        } else {
+            target_path = &opt_path;
+        }
+        if let Err(e) = fs::create_dir_all(target_path) {
             print!("{e}")
         }
         Ok(())
