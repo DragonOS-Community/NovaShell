@@ -99,14 +99,14 @@ impl Command {
         let regex: Regex = Regex::new(r#"'.*'|".*"|[^\s]+"#).unwrap();
         let hay = str.clone();
         let mut iter = regex.captures_iter(hay.as_str()).map(|c| {
-            let str = c.get(0).unwrap().as_str();
-            if str.starts_with(|char| char == '\'' || char == '\"')
-                && str.ends_with(|char| char == '\'' || char == '\"')
-            {
-                return str[1..str.len() - 1].to_string();
-            } else {
+                //modify
+                let str = c.get(0).unwrap().as_str();
+                if str.starts_with(|char| char == '\'' || char == '\"')
+                    && str.ends_with(|char| char == '\'' || char == '\"') && str.len() != 1
+                {
+                    return str[1..str.len() - 1].to_string();
+                } 
                 return str.to_string();
-            }
         });
         let name = iter.next().unwrap();
         let re: Regex = Regex::new(r"\$[\w_]+").unwrap();
@@ -133,15 +133,23 @@ impl Command {
     }
 
     pub fn from_strings(str: String) -> Vec<Command> {
-        str.split(';')
-            .filter_map(|s| match Command::from_string(String::from(s)) {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    CommandError::handle(e);
-                    None
+        //modify
+        let mut commands = Vec::new();
+        let segments: Vec<&str> = str.split(';').collect();
+        for segment in segments {
+            if segment.trim().is_empty() {
+                continue;
+            } else {
+                match  Command::from_string(String::from(segment)) {
+                    Ok(s) => commands.push(s),
+                    Err(e) => {
+                        CommandError::handle(e);
+                    }
                 }
-            })
-            .collect::<Vec<Command>>()
+            }
+        }
+
+        commands
     }
 }
 
