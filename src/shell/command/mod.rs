@@ -42,6 +42,7 @@ pub enum CommandError {
     DirectoryNotFound(String),
     NotDirectory(String),
     NotFile(String),
+    UnclosedQuotation(usize),
 }
 
 impl CommandError {
@@ -74,6 +75,9 @@ impl CommandError {
             CommandError::NotFile(path) => {
                 println!("path is not a file: {}", path)
             }
+            CommandError::UnclosedQuotation(index) => {
+                println!("command exists unclosed quotation at index: {}", index)
+            }
         };
     }
 }
@@ -95,18 +99,59 @@ impl Command {
         });
     }
 
+    fn parse_command_into_fragments(str: String) -> Result<Vec<String>, usize> {
+        let iter = str.chars();
+        let mut fragments: Vec<String> = Vec::new();
+        let mut stack: String = String::with_capacity(str.len());
+        let mut left_quote: char = ' ';
+        let mut left_quote_index: usize = 0;
+        for (index, ch) in iter.enumerate() {
+            //存在未闭合的左引号，此时除能够配对的引号外，任何字符都加入栈中
+            if left_quote != ' ' {
+                if ch == left_quote {
+                    left_quote = ' ';
+                } else {
+                    stack.push(ch);
+                }
+            } else {
+                //不存在未闭合的左引号
+                if ch == '\'' || ch == '\"' {
+                    //字符为引号，记录下来
+                    left_quote = ch;
+                    left_quote_index = index;
+                } else if ch == ' ' {
+                    if !stack.is_empty() {
+                        //字符为空格且栈中不为空，该空格视作命令段之间的分割线
+                        //将栈中字符作为一个命令段加入集合，之后重置栈
+                        fragments.push(stack.to_string());
+                        stack.clear();
+                    }
+                } else {
+                    //其他字符都作为普通字符加入栈中
+                    stack.push(ch);
+                }
+            }
+        }
+        //结束时如果栈不为空
+        if !stack.is_empty() {
+            if left_quote == ' ' {
+                //不存在未闭合的引号，将栈中剩余内容作为命令段加入集合
+                fragments.push(stack.to_string());
+            } else {
+                //存在未闭合的引号，返回此引号的下标
+                return Err(left_quote_index);
+            }
+        }
+        Ok(fragments)
+    }
+
     fn from_string(str: String) -> Result<Command, CommandError> {
-        let regex: Regex = Regex::new(r#"'.*'|".*"|[^\s]+"#).unwrap();
-        let hay = str.clone();
-        let mut iter = regex.captures_iter(hay.as_str()).map(|c| {
-            let str = c.get(0).unwrap().as_str();
-            if str.starts_with(|char| char == '\'' || char == '\"')
-                && str.ends_with(|char| char == '\'' || char == '\"') && str.len() != 1
-            {
-                return str[1..str.len() - 1].to_string();
-            } 
-            return str.to_string();
-        });
+        let iter = Self::parse_command_into_fragments(str);
+        if let Err(index) = iter {
+            return Err(CommandError::UnclosedQuotation(index));
+        }
+        let mut iter = iter.unwrap().into_iter();
+
         let name = iter.next().unwrap();
         let re: Regex = Regex::new(r"\$[\w_]+").unwrap();
         let replacement = |caps: &Captures| -> String {
@@ -138,7 +183,7 @@ impl Command {
             if segment.trim().is_empty() {
                 continue;
             } else {
-                match  Command::from_string(String::from(segment)) {
+                match Command::from_string(String::from(segment)) {
                     Ok(s) => commands.push(s),
                     Err(e) => {
                         CommandError::handle(e);
@@ -147,7 +192,7 @@ impl Command {
             }
         }
 
-        commands 
+        commands
     }
 }
 
