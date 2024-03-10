@@ -47,7 +47,6 @@ impl Shell {
         let mut buf: Vec<u8>;
         loop {
             buf = Vec::new();
-            //buf.push(b' ');
             self.history_commands.push(buf);
             Printer::print_prompt(&Self::current_dir());
             if self.readline(0) == 0 {
