@@ -47,7 +47,7 @@ impl Shell {
         let mut buf: Vec<u8>;
         loop {
             buf = Vec::new();
-            buf.push(b' ');
+            //buf.push(b' ');
             self.history_commands.push(buf);
             Printer::print_prompt(&Self::current_dir());
             if self.readline(0) == 0 {
@@ -119,7 +119,6 @@ impl Shell {
         let mut buf = self.history_commands.get_mut(command_index).unwrap();
         let mut cursor = 0;
 
-        Printer::print_cursor(b' ');
         stdout.flush().unwrap();
         loop {
             Self::read_char(&mut key[0]);
@@ -179,7 +178,6 @@ impl Shell {
                     SpecialKeycode::LF | SpecialKeycode::CR => {
                         // println!("buf:{:?}\tcursor:{}\tbuf.len():{}", buf, cursor, buf.len());
                         Printer::set_cursor(buf, cursor, buf.len());
-                        println!();
                         let mut command = buf.clone();
                         buf = self.history_commands.get_mut(len).unwrap();
                         buf.clear();
@@ -274,7 +272,6 @@ impl Shell {
                 match key[0] {
                     1..=31 => {}
                     c => {
-                        Printer::insert(cursor, &[c], buf);
                         buf.insert(cursor, c);
                         cursor += 1;
                     }
@@ -307,13 +304,6 @@ impl Printer {
                 SpecialKeycode::BackSpace.into(),
             ]);
         }
-    }
-
-    fn insert(cursor: usize, bytes: &[u8], buf: &Vec<u8>) {
-        Printer::delete_from_index(cursor, buf.len());
-        Printer::print(bytes);
-        Printer::print_cursor(buf[cursor]);
-        Printer::print(&buf[cursor + 1..]);
     }
 
     fn delete(cursor: usize, buf: &Vec<u8>) {
