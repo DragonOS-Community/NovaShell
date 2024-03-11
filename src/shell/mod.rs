@@ -1,28 +1,66 @@
+use core::fmt;
 use std::{
+    cell::RefCell,
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, Write},
+    io::{self, stdout, BufRead, BufReader, Read, Write},
+    ops::Deref,
     path::Path,
     print,
+    rc::Rc,
     string::String,
     vec::Vec,
 };
 
 use crate::keycode::{FunctionKeySuffix, SpecialKeycode};
 
+use colored::Colorize;
 use command::{BuildInCmd, Command};
 
 pub mod command;
 
+pub struct Prompt {
+    user_name: String,
+    computer_name: String,
+    path: String,
+}
+
+impl Prompt {
+    pub fn len(&self) -> usize {
+        format!("{}@{}:{}$ ", self.user_name, self.computer_name, self.path).len()
+    }
+
+    pub fn update_path(&mut self) {
+        self.path = std::env::current_dir()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+    }
+}
+
+impl fmt::Display for Prompt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}$ ",
+            format!("{}@{}", self.user_name, self.computer_name).bright_green(),
+            self.path.bright_cyan()
+        )
+    }
+}
+
 pub struct Shell {
-    history_commands: Vec<Vec<u8>>,
-    executed_commands: Vec<Vec<u8>>,
+    history_commands: Vec<Rc<RefCell<Vec<u8>>>>,
+    history_path: String,
+    printer: Printer,
 }
 
 impl Shell {
     pub fn new() -> Shell {
         let mut shell = Shell {
             history_commands: Vec::new(),
-            executed_commands: Vec::new(),
+            history_path: "history_commands.txt".to_string(),
+            printer: Printer::new(&Rc::new(RefCell::new(Vec::new()))),
         };
         shell.read_commands();
         shell
@@ -44,21 +82,26 @@ impl Shell {
     }
 
     pub fn exec(&mut self) {
-        let mut buf: Vec<u8>;
+        crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
         loop {
-            buf = Vec::new();
-            self.history_commands.push(buf);
-            Printer::print_prompt(&Self::current_dir());
+            self.printer.init_before_readline();
             if self.readline(0) == 0 {
                 println!();
                 break;
             }
-            let command_bytes = self.history_commands.last().unwrap().clone();
-            if command_bytes.starts_with(&[b' ']) {
-                self.history_commands.pop().unwrap();
-            } else {
-                self.executed_commands.push(command_bytes.clone());
-            }
+            let command_bytes = self.printer.buf.borrow().clone();
+            if !command_bytes.starts_with(&[b' '])
+                && command_bytes
+                    != self
+                        .history_commands
+                        .last()
+                        .unwrap_or(&Rc::new(RefCell::new(Vec::new())))
+                        .borrow()
+                        .clone()
+            {
+                self.history_commands
+                    .push(Rc::new(RefCell::new(command_bytes.clone())));
+            };
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
             }
@@ -73,206 +116,200 @@ impl Shell {
             .for_each(|command| self.exec_command(command));
     }
 
-    fn read_commands(&mut self) {
-        for line in BufReader::new(match File::open("history_commands.txt") {
+    pub fn read_commands(&mut self) {
+        let mut history = Vec::new();
+        for line in BufReader::new(match File::open(&self.history_path) {
             Ok(file) => file,
-            Err(_) => File::create("history_commands.txt").unwrap(),
+            Err(_) => File::create(&self.history_path).unwrap(),
         })
         .lines()
         {
             match line {
-                Ok(s) => self.history_commands.push(s.into_bytes()),
+                Ok(s) => history.push(Rc::new(RefCell::new(s.into_bytes()))),
                 Err(_) => {
                     break;
                 }
             }
         }
+        self.history_commands = history;
     }
 
     fn write_commands(&self) {
         let mut file = OpenOptions::new()
-            .append(true)
+            .append(false)
             .open("history_commands.txt")
             .unwrap();
-        for command_line in &self.executed_commands {
-            file.write_all(&command_line[..]).unwrap();
+        for command_line in &self.history_commands {
+            file.write_all(&command_line.borrow()[..]).unwrap();
             file.write_all(&[SpecialKeycode::LF.into()]).unwrap();
         }
     }
 
-    fn read_char(byte: &mut u8) {
-        let mut c: libc::c_uchar = 0;
-        unsafe {
-            let p = &mut c as *mut libc::c_uchar as *mut libc::c_void;
-            libc::read(0, p, 1);
-        }
-        *byte = c;
+    fn read_char() -> u8 {
+        let mut buf: [u8; 1] = [0];
+        std::io::stdin().read(&mut buf).expect("read char error");
+        buf[0]
     }
 
     fn readline(&mut self, _fd: usize) -> usize {
         let mut stdout = std::io::stdout();
-        let prompt: String = Self::current_dir().clone();
-        let len = self.history_commands.len() - 1;
-        let mut key: [u8; 1] = [0];
-        let mut command_index = len;
-        let mut buf = self.history_commands.get_mut(command_index).unwrap();
-        let mut cursor = 0;
-
-        stdout.flush().unwrap();
+        self.history_commands.push(Rc::clone(&self.printer.buf));
+        let mut command_index = self.history_commands.len() - 1;
         loop {
-            Self::read_char(&mut key[0]);
-            // if stdin.read(&mut key).ok() != Some(1) {
-            //     continue;
-            // }
-            if let Ok(special_key) = SpecialKeycode::try_from(key[0]) {
+            let key = Self::read_char();
+            if let Ok(special_key) = SpecialKeycode::try_from(key) {
                 match special_key {
                     SpecialKeycode::FunctionKeyPrefix => {
-                        Self::read_char(&mut key[0]);
-                        let function_key = FunctionKeySuffix::try_from(key[0]).unwrap();
+                        let key = Self::read_char();
+                        let function_key = FunctionKeySuffix::try_from(key).unwrap();
                         match function_key {
                             FunctionKeySuffix::Up => {
                                 if command_index > 0 {
                                     command_index -= 1;
+                                    self.printer.change_line(
+                                        self.history_commands.get(command_index).unwrap(),
+                                    );
                                 }
-                                let old_length = buf.len();
-                                buf = self.history_commands.get_mut(command_index).unwrap();
-                                Printer::replace(&buf, old_length);
-                                cursor = buf.len() - 1;
                             }
 
                             FunctionKeySuffix::Down => {
-                                if command_index < len {
+                                if command_index < self.history_commands.len() - 1 {
                                     command_index += 1;
+                                    self.printer.change_line(
+                                        self.history_commands.get(command_index).unwrap(),
+                                    );
                                 }
-                                let old_length = buf.len();
-                                buf = self.history_commands.get_mut(command_index).unwrap();
-                                Printer::replace(&buf, old_length);
-                                cursor = buf.len() - 1;
                             }
 
                             FunctionKeySuffix::Left => {
-                                if cursor > 0 {
-                                    Printer::set_cursor(buf, cursor, cursor - 1);
-                                    cursor -= 1;
-                                }
+                                self.printer.cursor_left();
                             }
 
                             FunctionKeySuffix::Right => {
-                                if cursor < buf.len() - 1 {
-                                    Printer::set_cursor(buf, cursor, cursor + 1);
-                                    cursor += 1;
-                                }
+                                self.printer.cursor_right();
                             }
 
                             FunctionKeySuffix::Home => {
-                                Printer::set_cursor(buf, cursor, 0);
+                                self.printer.home();
                             }
 
                             FunctionKeySuffix::End => {
-                                Printer::set_cursor(buf, cursor, buf.len());
+                                self.printer.end();
                             }
                         }
                     }
 
                     SpecialKeycode::LF | SpecialKeycode::CR => {
-                        // println!("buf:{:?}\tcursor:{}\tbuf.len():{}", buf, cursor, buf.len());
-                        Printer::set_cursor(buf, cursor, buf.len());
-                        let mut command = buf.clone();
-                        buf = self.history_commands.get_mut(len).unwrap();
-                        buf.clear();
-                        buf.append(&mut command);
-
+                        println!();
+                        self.history_commands.pop();
                         return 1;
                     }
 
                     SpecialKeycode::BackSpace => {
-                        if cursor > 0 {
-                            Printer::delete_to_cursor(cursor, 1, buf);
-                            buf.remove(cursor - 1);
-                            cursor -= 1;
-                        }
+                        self.printer.backspace();
                     }
 
                     SpecialKeycode::Delete => {
-                        if cursor < buf.len() - 1 {
-                            Printer::delete(cursor, buf);
-                            buf.remove(cursor);
-                        }
+                        self.printer.delete(1);
                     }
 
                     SpecialKeycode::Tab => {
-                        if buf.len() > 1 && buf[cursor - 1] != b' ' {
-                            let command: String =
-                                String::from_utf8(buf[..cursor].to_vec()).unwrap();
-                            let mut command_frag =
-                                command.split_ascii_whitespace().collect::<Vec<_>>();
-                            let incomplete_frag = command_frag.pop().unwrap();
-                            let mut incomplete_len: usize = incomplete_frag.len();
-                            let candidates = match command_frag.len() {
-                                0 => Printer::complete_command(incomplete_frag),
-                                1.. => {
-                                    if let Some(index) = incomplete_frag.rfind('/') {
-                                        incomplete_len = incomplete_frag.len() - index - 1;
-                                    } else {
-                                        incomplete_len = incomplete_frag.len();
+                        let mut buf = self.printer.buf.deref().borrow().clone();
+                        buf.truncate(self.printer.cursor);
+                        let str = String::from_utf8(buf.clone()).unwrap();
+                        if buf.len() == 0 || buf.iter().all(|byte| *byte == b' ') {
+                            return 1;
+                        }
+
+                        let iter = str.chars();
+                        let mut fragments: Vec<String> = Vec::new();
+                        let mut stack: String = String::with_capacity(str.len());
+                        let mut left_quote: char = ' ';
+                        for ch in iter {
+                            //存在未闭合的左引号，此时除能够配对的引号外，任何字符都加入栈中
+                            if left_quote != ' ' {
+                                if ch == left_quote {
+                                    left_quote = ' ';
+                                }
+                                stack.push(ch);
+                            } else {
+                                //不存在未闭合的左引号
+                                if ch == '\'' || ch == '\"' {
+                                    //字符为引号，记录下来
+                                    left_quote = ch;
+                                    stack.push(ch);
+                                } else if ch == ' ' {
+                                    if !stack.is_empty() {
+                                        //字符为空格且栈中不为空，该空格视作命令段之间的分割线
+                                        //将栈中字符作为一个命令段加入集合，之后重置栈
+                                        fragments.push(stack.to_string());
+                                        stack.clear();
                                     }
-                                    Printer::complete_path(
-                                        Self::current_dir().as_str(),
-                                        incomplete_frag,
-                                    )
+                                } else {
+                                    //其他字符都作为普通字符加入栈中
+                                    stack.push(ch);
                                 }
-                                _ => Vec::new(),
-                            };
-                            match candidates.len() {
-                                1 => {
-                                    let complete_part = candidates[0][incomplete_len..].as_bytes();
-
-                                    Printer::delete_from_index(cursor, buf.len());
-
-                                    // stdout.write_all(complete_part).unwrap();
-                                    Printer::print(complete_part);
-
-                                    Printer::print_cursor(buf[cursor]);
-                                    Printer::print(&buf[cursor + 1..]);
-
-                                    buf.splice(cursor..cursor, complete_part.iter().cloned());
-                                    cursor += candidates[0].len() - incomplete_len;
-                                }
-                                2.. => {
-                                    Printer::delete_from_index(cursor, buf.len());
-                                    Printer::print(&buf[cursor..buf.len()]);
-                                    println!();
-                                    for candidate in candidates {
-                                        if candidate.ends_with('/') {
-                                            crate::shell::Printer::print_color(
-                                                candidate.as_bytes(),
-                                                0x000088ff,
-                                                0x00000000,
-                                            );
-                                            print!("    ");
-                                        } else {
-                                            print!("{candidate}    ");
-                                        }
-                                    }
-                                    println!();
-                                    Printer::print_prompt(&prompt);
-                                    Printer::print(&buf[..buf.len() - 1]);
-                                    Printer::print_cursor(b' ');
-                                    Printer::set_cursor(buf, buf.len(), cursor);
-                                }
-                                _ => {}
                             }
+                        }
+                        //结束时如果栈不为空
+                        if !stack.is_empty() {
+                            fragments.push(stack.to_string());
+                        } else {
+                            //结束时如果栈为空，说明光标左边的字符不属于任何命令片段，无法进行补全
+                            return 1;
+                        }
+
+                        let mut target_fragment = fragments.last().unwrap().clone();
+                        target_fragment = target_fragment.replace("\'", "").replace("\"", "");
+
+                        let candidates = if fragments.len() < 2 {
+                            //补全命令
+                            complete_command(&target_fragment)
+                        } else {
+                            //补全参数
+                            complete_path(&target_fragment)
+                        };
+
+                        match candidates.len() {
+                            1 => {
+                                let old_fragment = fragments.last().unwrap();
+                                let candidate = candidates.last().unwrap();
+                                self.printer.cursor -= old_fragment.len();
+                                self.printer.flush_cursor();
+                                self.printer.delete(old_fragment.len());
+                                self.printer.insert(candidate.as_bytes());
+                            }
+                            2.. => {
+                                let old_cursor = self.printer.cursor;
+                                self.printer.end();
+                                println!();
+                                for candidate in candidates {
+                                    print!(
+                                        "{}    ",
+                                        if candidate.ends_with('/') {
+                                            candidate.cyan()
+                                        } else {
+                                            candidate.white()
+                                        }
+                                    );
+                                }
+                                println!();
+                                self.printer.print_prompt();
+                                Printer::print(&self.printer.buf.deref().borrow());
+                                self.printer.cursor = old_cursor;
+                                self.printer.flush_cursor();
+                            }
+                            _ => {}
                         }
                     }
 
                     _ => {}
                 }
             } else {
-                match key[0] {
+                match key {
                     1..=31 => {}
                     c => {
-                        buf.insert(cursor, c);
-                        cursor += 1;
+                        self.printer.insert(&[c]);
                     }
                 }
             }
@@ -281,50 +318,129 @@ impl Shell {
     }
 }
 
-struct Printer;
+struct Printer {
+    prompt: Prompt,
+    buf: Rc<RefCell<Vec<u8>>>,
+    cursor: usize,
+}
 
 impl Printer {
-    fn print_prompt(current_dir: &String) {
-        io::stdout().flush().unwrap();
-        Self::print_color("[DragonOS]:".as_bytes(), 0x0000ff90, 0x00000000);
-        Self::print_color(current_dir.as_bytes(), 0x000088ff, 0x00000000);
-        print!("$ ");
-    }
-
-    fn print_cursor(c: u8) {
-        Self::print_color(&[c], 0x00000000, 0x00ffffff);
-    }
-
-    fn delete_from_index(index: usize, length: usize) {
-        for _i in 0..length - index {
-            Printer::print(&[
-                SpecialKeycode::BackSpace.into(),
-                b' ',
-                SpecialKeycode::BackSpace.into(),
-            ]);
+    fn new(bytes: &Rc<RefCell<Vec<u8>>>) -> Self {
+        let len = bytes.deref().borrow().len();
+        Printer {
+            prompt: Prompt {
+                computer_name: "DragonOS".to_string(),
+                user_name: "root".to_string(),
+                path: std::env::current_dir()
+                    .expect("Error getting current directory")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            },
+            buf: Rc::clone(bytes),
+            cursor: len,
         }
     }
 
-    fn delete(cursor: usize, buf: &Vec<u8>) {
-        if cursor < buf.len() - 1 {
-            Printer::delete_from_index(cursor, buf.len());
-            Printer::print_cursor(buf[cursor + 1]);
-            Printer::print(&buf[cursor + 2..]);
+    fn init_before_readline(&mut self) {
+        self.buf = Rc::new(RefCell::new(Vec::new()));
+        self.prompt.update_path();
+        self.print_prompt();
+        self.cursor = 0;
+        self.flush_cursor();
+    }
+
+    fn print_prompt(&self) {
+        print!("{}", self.prompt);
+        stdout().flush().unwrap();
+    }
+
+    //在光标处插入字符串
+    fn insert(&mut self, bytes: &[u8]) {
+        let mut buf = self.buf.deref().borrow_mut();
+        // self.delete_to_cursor(buf.len() - cursor);
+        // print!("{}"," ".repeat(buf.len() - cursor));
+        Printer::print(bytes);
+        Printer::print(&buf[self.cursor..]);
+        buf.splice(self.cursor..self.cursor, bytes.iter().cloned());
+        self.cursor += bytes.len();
+        self.flush_cursor();
+        stdout().flush().unwrap();
+    }
+
+    //删除下标为[cursor,cursor + len)的字符，光标位置不变
+    fn delete(&self, len: usize) {
+        let cursor = self.cursor;
+        let mut buf = self.buf.deref().borrow_mut();
+        if cursor + len - 1 < buf.len() {
+            Printer::print(&buf[cursor + len..]);
+            print!("{}", " ".repeat(len));
+            self.flush_cursor();
+            buf.drain(cursor..cursor + len);
+            stdout().flush().unwrap();
         }
     }
 
-    fn delete_to_cursor(cursor: usize, length: usize, buf: &Vec<u8>) {
-        if cursor > 0 {
-            Printer::delete_from_index(cursor - length, buf.len());
-            Printer::print_cursor(buf[cursor]);
-            Printer::print(&buf[cursor + 1..]);
+    fn backspace(&mut self) {
+        if self.cursor > 0 {
+            crossterm::execute!(io::stdout(), crossterm::cursor::MoveLeft(1)).unwrap();
+            self.cursor -= 1;
+            self.flush_cursor();
+            self.delete(1);
         }
     }
 
-    fn replace(bytes: &[u8], old_length: usize) {
-        Printer::delete_from_index(0, old_length);
-        Printer::print(&bytes[0..bytes.len() - 1]);
-        Printer::print_cursor(b' ');
+    fn flush_cursor(&self) {
+        crossterm::execute!(
+            io::stdout(),
+            crossterm::cursor::MoveToColumn((self.cursor + self.prompt.len()) as u16)
+        )
+        .unwrap();
+    }
+
+    fn cursor_left(&mut self) {
+        if self.cursor > 0 {
+            crossterm::execute!(io::stdout(), crossterm::cursor::MoveLeft(1)).unwrap();
+            self.cursor -= 1;
+        }
+    }
+
+    fn cursor_right(&mut self) {
+        let buf = self.buf.deref().borrow();
+        if self.cursor < buf.len() {
+            crossterm::execute!(io::stdout(), crossterm::cursor::MoveRight(1)).unwrap();
+            self.cursor += 1;
+        }
+    }
+
+    fn home(&mut self) {
+        self.cursor = 0;
+        self.flush_cursor();
+    }
+
+    fn end(&mut self) {
+        self.cursor = self.buf.deref().borrow().len();
+        self.flush_cursor();
+    }
+
+    fn change_line(&mut self, new_buf: &Rc<RefCell<Vec<u8>>>) {
+        let old_buf_borrow = self.buf.deref().borrow();
+        let new_buf_borrow = new_buf.deref().borrow();
+        self.cursor = 0;
+        self.flush_cursor();
+        Printer::print(&new_buf_borrow[..]);
+        self.cursor = new_buf_borrow.len();
+        if new_buf_borrow.len() < old_buf_borrow.len() {
+            print!(
+                "{}",
+                " ".repeat(old_buf_borrow.len() - new_buf_borrow.len())
+            );
+            self.flush_cursor();
+        }
+        drop(old_buf_borrow);
+        drop(new_buf_borrow);
+        self.buf = Rc::clone(new_buf);
+        stdout().flush().unwrap();
     }
 
     fn print(bytes: &[u8]) {
@@ -338,78 +454,89 @@ impl Printer {
             dsc::syscall!(SYS_PUT_STRING, cstr.as_ptr(), front_color, background_color);
         }
     }
+}
 
-    fn set_cursor(buf: &mut Vec<u8>, old_index: usize, new_index: usize) {
-        if new_index < buf.len() {
-            let index = std::cmp::min(old_index, new_index);
-            Printer::delete_from_index(index, buf.len());
-            Printer::print(&buf[index..new_index]);
-            Printer::print_cursor(buf[new_index]);
-            Printer::print(&buf[new_index + 1..]);
-        } else {
-            Printer::delete_from_index(old_index, buf.len());
-            Printer::print(&buf[old_index..]);
+pub fn _print_color_example() {
+    let example = "abcdefghijklmnopqrstuvwxyz";
+    println!("{}", example.bright_black());
+    println!("{}", example.bright_blue());
+    println!("{}", example.bright_cyan());
+    println!("{}", example.bright_green());
+    println!("{}", example.bright_magenta());
+    println!("{}", example.bright_purple());
+    println!("{}", example.bright_red());
+    println!("{}", example.bright_white());
+    println!("{}", example.bright_yellow());
+    println!("{}", example.black());
+    println!("{}", example.blue());
+    println!("{}", example.cyan());
+    println!("{}", example.green());
+    println!("{}", example.magenta());
+    println!("{}", example.purple());
+    println!("{}", example.red());
+    println!("{}", example.white());
+    println!("{}", example.yellow());
+}
+
+pub fn complete_command(command: &str) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
+        if cmd.starts_with(command) {
+            candidates.push(String::from(*cmd));
         }
     }
+    candidates
+}
 
-    fn complete_command(command: &str) -> Vec<String> {
-        let mut candidates: Vec<String> = Vec::new();
-        for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
-            if cmd.starts_with(command) {
-                candidates.push(String::from(*cmd));
-            }
-        }
-        candidates
-    }
+pub fn complete_path(incomplete_path: &str) -> Vec<String> {
+    let current_dir = std::env::current_dir().unwrap();
+    let current_dir = current_dir.to_str().unwrap();
+    let path = if incomplete_path.starts_with('/') {
+        String::from(incomplete_path)
+    } else {
+        format!("{}/{}", current_dir, incomplete_path)
+    };
 
-    fn complete_path(current_dir: &str, incomplete_path: &str) -> Vec<String> {
-        let path = if incomplete_path.starts_with('/') {
-            String::from(incomplete_path)
+    let mut candidates: Vec<String> = Vec::new();
+    let dir: &str;
+    let incomplete_name: &str;
+    if let Some(index) = path.rfind('/') {
+        dir = &path[..=index];
+        if index < path.len() {
+            incomplete_name = &path[index + 1..];
         } else {
-            format!("{}/{}", current_dir, incomplete_path)
-        };
-
-        let mut candidates: Vec<String> = Vec::new();
-        let dir: &str;
-        let incomplete_name: &str;
-        if let Some(index) = path.rfind('/') {
-            dir = &path[..=index];
-            if index < path.len() {
-                incomplete_name = &path[index + 1..];
+            incomplete_name = "";
+        }
+    } else {
+        dir = ".";
+        incomplete_name = &path[..];
+    }
+    match fs::read_dir(dir) {
+        Ok(read_dir) => {
+            if incomplete_name == "" {
+                for entry in read_dir {
+                    let entry = entry.unwrap();
+                    let mut file_name = entry.file_name().into_string().unwrap();
+                    if entry.file_type().unwrap().is_dir() {
+                        file_name.push('/');
+                    }
+                    candidates.push(file_name);
+                }
             } else {
-                incomplete_name = "";
-            }
-        } else {
-            dir = ".";
-            incomplete_name = &path[..];
-        }
-        match fs::read_dir(dir) {
-            Ok(read_dir) => {
-                if incomplete_name == "" {
-                    for entry in read_dir {
-                        let entry = entry.unwrap();
-                        let mut file_name = entry.file_name().into_string().unwrap();
+                for entry in read_dir {
+                    let entry = entry.unwrap();
+                    let mut file_name = entry.file_name().into_string().unwrap();
+                    if file_name.starts_with(incomplete_name) {
                         if entry.file_type().unwrap().is_dir() {
                             file_name.push('/');
                         }
                         candidates.push(file_name);
                     }
-                } else {
-                    for entry in read_dir {
-                        let entry = entry.unwrap();
-                        let mut file_name = entry.file_name().into_string().unwrap();
-                        if file_name.starts_with(incomplete_name) {
-                            if entry.file_type().unwrap().is_dir() {
-                                file_name.push('/');
-                            }
-                            candidates.push(file_name);
-                        }
-                    }
                 }
             }
-
-            Err(_) => {}
         }
-        return candidates;
+
+        Err(_) => {}
     }
+    return candidates;
 }
