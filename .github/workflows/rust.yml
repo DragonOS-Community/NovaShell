@@ -11,14 +11,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  check:
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build
-      run: make build
+    - name: build check
+      run: make check
 
   fmt-check:
 
