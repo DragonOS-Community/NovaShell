@@ -13,7 +13,7 @@ run:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) run
 
 build:
-	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build --target $(RUST_TARGET)
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build --target
 
 clean:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) clean
