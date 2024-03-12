@@ -417,7 +417,36 @@ impl Shell {
         if unlikely(args.len() != 1) {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
-        let path = self.is_dir(args.get(0).unwrap())?;
+
+        let path = args.get(0).unwrap();
+        let mut parent = Self::current_dir();
+        let mut child = path.clone();
+        if let Some(index) = path.rfind('/') {
+            let (str1, str2) = path.split_at(index + 1);
+            parent = String::from(str1);
+            child = String::from(str2);
+        }
+
+        let dir = match fs::read_dir(Path::new(&parent)) {
+            Ok(readdir) => readdir,
+            Err(_) => return Err(CommandError::InvalidArgument(parent)),
+        };
+
+        let mut is_find = false;
+        for entry in dir {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir()
+                && entry.file_name().to_string_lossy().into_owned() == child
+            {
+                is_find = true;
+                break;
+            }
+        }
+        if !is_find {
+            return Err(CommandError::DirectoryNotFound(path.clone()));
+        }
+
+        let path = self.is_dir(path)?;
         let path_cstr = std::ffi::CString::new(path).unwrap();
         unsafe { libc::unlinkat(0, path_cstr.as_ptr(), libc::AT_REMOVEDIR) };
         Ok(())
