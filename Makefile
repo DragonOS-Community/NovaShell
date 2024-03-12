@@ -13,7 +13,7 @@ run:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) run
 
 build:
-	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build --target $(RUST_TARGET)
 
 clean:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) clean
@@ -23,6 +23,12 @@ test:
 
 doc:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) doc
+
+fmt:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) fmt
+
+fmt-check:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) fmt --check
 
 run-release:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) run --release
