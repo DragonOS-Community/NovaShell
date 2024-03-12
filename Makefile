@@ -1,7 +1,7 @@
 # The toolchain we use.
 # You can get it by running DragonOS' `tools/bootstrap.sh`
-TOOLCHAIN="+nightly-2023-08-15-x86_64-unknown-linux_dragonos-gnu"
-RUSTFLAGS+="-C target-feature=+crt-static -C link-arg=-no-pie"
+# TOOLCHAIN="+nightly-2023-08-15-x86_64-unknown-linux_dragonos-gnu"
+# RUSTFLAGS+="-C target-feature=+crt-static -C link-arg=-no-pie"
 
 # 如果是在dadk中编译，那么安装到dadk的安装目录中
 INSTALL_DIR?=$(DADK_CURRENT_BUILD_DIR)
@@ -15,6 +15,9 @@ run:
 build:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) build
 
+check:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) check --all-features
+
 clean:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) clean
 
@@ -23,6 +26,12 @@ test:
 
 doc:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) doc
+
+fmt:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) fmt
+
+fmt-check:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) fmt --check
 
 run-release:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) run --release
