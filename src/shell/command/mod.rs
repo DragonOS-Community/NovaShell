@@ -431,12 +431,11 @@ impl Shell {
             child = String::from(str2);
         }
 
-        let dir = fs::read_dir(Path::new(&parent)).map_err(|_| 
-            CommandError::InvalidArgument(parent)
-        )?;
+        let dir =
+            fs::read_dir(Path::new(&parent)).map_err(|_| CommandError::InvalidArgument(parent))?;
 
         let is_find = dir.filter_map(Result::ok).any(|entry| {
-            entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) 
+            entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
                 && entry.file_name().to_string_lossy().into_owned() == child
         });
 
