@@ -43,6 +43,7 @@ pub enum CommandError {
     NotDirectory(String),
     NotFile(String),
     UnclosedQuotation(usize),
+    UnableGetArg,
 }
 
 impl CommandError {
@@ -77,6 +78,9 @@ impl CommandError {
             }
             CommandError::UnclosedQuotation(index) => {
                 println!("command exists unclosed quotation at index: {}", index)
+            }
+            CommandError::UnableGetArg => {
+                println!("unable to get the argument")
             }
         };
     }
@@ -418,7 +422,7 @@ impl Shell {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
 
-        let path = args.get(0).unwrap();
+        let path = args.get(0).ok_or(CommandError::UnableGetArg)?;
         let mut parent = Self::current_dir();
         let mut child = path.clone();
         if let Some(index) = path.rfind('/') {
@@ -427,21 +431,15 @@ impl Shell {
             child = String::from(str2);
         }
 
-        let dir = match fs::read_dir(Path::new(&parent)) {
-            Ok(readdir) => readdir,
-            Err(_) => return Err(CommandError::InvalidArgument(parent)),
-        };
+        let dir = fs::read_dir(Path::new(&parent)).map_err(|_| 
+            CommandError::InvalidArgument(parent)
+        )?;
 
-        let mut is_find = false;
-        for entry in dir {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir()
+        let is_find = dir.filter_map(Result::ok).any(|entry| {
+            entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) 
                 && entry.file_name().to_string_lossy().into_owned() == child
-            {
-                is_find = true;
-                break;
-            }
-        }
+        });
+
         if !is_find {
             return Err(CommandError::DirectoryNotFound(path.clone()));
         }
