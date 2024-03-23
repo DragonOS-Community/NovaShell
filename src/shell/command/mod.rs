@@ -1,9 +1,9 @@
+use colored::Colorize;
 use help::Help;
 use path_clean::PathClean;
 use regex::{Captures, Regex};
 use std::intrinsics::unlikely;
 use std::io::Read;
-use std::os::unix::ffi::OsStrExt;
 use std::{
     format,
     fs::{self, File, OpenOptions},
@@ -311,15 +311,11 @@ impl Shell {
 
         for entry in dir {
             let entry = entry.unwrap();
+            let name = entry.file_name().into_string().unwrap();
             if entry.file_type().unwrap().is_dir() {
-                crate::shell::Printer::print_color(
-                    entry.file_name().as_bytes(),
-                    0x000088ff,
-                    0x00000000,
-                );
-                print!("    ");
+                print!("{}\t", name.truecolor(0x00, 0x88, 0xff));
             } else {
-                print!("{}    ", entry.file_name().into_string().unwrap());
+                print!("{}\t", name);
             }
         }
         println!();
