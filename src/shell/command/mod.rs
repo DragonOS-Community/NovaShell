@@ -206,22 +206,11 @@ pub struct BuildInCmd(pub &'static str);
 impl BuildInCmd {
     pub const BUILD_IN_CMD: &[BuildInCmd] = &[
         BuildInCmd("cd"),
-        BuildInCmd("ls"),
-        BuildInCmd("cat"),
-        BuildInCmd("touch"),
-        BuildInCmd("mkdir"),
-        BuildInCmd("rm"),
-        BuildInCmd("rmdir"),
-        BuildInCmd("pwd"),
-        BuildInCmd("cp"),
         BuildInCmd("exec"),
-        BuildInCmd("echo"),
         BuildInCmd("reboot"),
         BuildInCmd("free"),
-        BuildInCmd("kill"),
         BuildInCmd("help"),
         BuildInCmd("export"),
-        BuildInCmd("env"),
         BuildInCmd("compgen"),
         BuildInCmd("complete"),
     ];
@@ -235,22 +224,11 @@ impl Shell {
     ) -> Result<(), CommandError> {
         match cmd {
             "cd" => self.shell_cmd_cd(args),
-            "ls" => self.shell_cmd_ls(args),
-            "cat" => self.shell_cmd_cat(args),
-            "touch" => self.shell_cmd_touch(args),
-            "mkdir" => self.shell_cmd_mkdir(args),
-            "rm" => self.shell_cmd_rm(args),
-            "rmdir" => self.shell_cmd_rmdir(args),
-            "pwd" => self.shell_cmd_pwd(args),
-            "cp" => self.shell_cmd_cp(args),
             "exec" => self.shell_cmd_exec(args),
-            "echo" => self.shell_cmd_echo(args),
             "reboot" => self.shell_cmd_reboot(args),
             "free" => self.shell_cmd_free(args),
-            "kill" => self.shell_cmd_kill(args),
             "help" => self.shell_cmd_help(args),
             "export" => self.shell_cmd_export(args),
-            "env" => self.shell_cmd_env(args),
             "compgen" => self.shell_cmd_compgen(args),
             "complete" => self.shell_cmd_complete(args),
 
@@ -296,200 +274,6 @@ impl Shell {
         };
         self.chdir(&path);
         Ok(())
-    }
-
-    fn shell_cmd_ls(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        let path = match args.len() {
-            0 => Self::current_dir(),
-            1 => self.is_dir(args.get(0).unwrap())?,
-            _ => return Err(CommandError::WrongArgumentCount(args.len())),
-        };
-        let dir = match fs::read_dir(Path::new(&path)) {
-            Ok(readdir) => readdir,
-            Err(_) => return Err(CommandError::InvalidArgument(path)),
-        };
-
-        for entry in dir {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                crate::shell::Printer::print_color(
-                    entry.file_name().as_bytes(),
-                    0x000088ff,
-                    0x00000000,
-                );
-                print!("    ");
-            } else {
-                print!("{}    ", entry.file_name().into_string().unwrap());
-            }
-        }
-        println!();
-        Ok(())
-    }
-
-    fn shell_cmd_cat(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if args.len() <= 0 {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-        let path = self.is_file(args.get(0).unwrap())?;
-        let mut buf: Vec<u8> = Vec::new();
-
-        File::open(path).unwrap().read_to_end(&mut buf).unwrap();
-        if args.len() == 1 {
-            println!("{}", String::from_utf8(buf.clone()).unwrap());
-        }
-
-        //TODO: 这部分应该放在`Shell`中，所有指令公用
-        if args.len() == 3 {
-            let mut target_path = args.get(2).unwrap().clone();
-            match self.is_file(&target_path) {
-                Ok(str) => target_path = str,
-                Err(e) => return Err(e),
-            }
-
-            if args[1] == ">" {
-                match OpenOptions::new().write(true).open(target_path) {
-                    Ok(mut file) => {
-                        file.write_all(&buf).unwrap();
-                    }
-                    Err(e) => print!("{e}"),
-                }
-            } else if args[1] == ">>" {
-                match OpenOptions::new().append(true).open(target_path) {
-                    Ok(mut file) => {
-                        file.write_all(&buf).unwrap();
-                    }
-                    Err(e) => print!("{e}"),
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn shell_cmd_touch(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() != 1) {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-        let path = args.get(0).unwrap();
-
-        //路径中提取目录和文件名
-        let index = path.rfind('/').unwrap_or(0);
-        let dir = &path[..index];
-        let file_name = &path[index..];
-
-        //判断文件所在目录是否存在
-        let str = self.is_dir(&dir.to_string())?;
-        //判断文件是否存在，存在时不操作,不存在时创建文件
-        let abs_path = format!("{}/{}", str, file_name);
-        if !Path::new(&abs_path).exists() {
-            File::create(&abs_path).unwrap();
-        }
-        Ok(())
-    }
-
-    fn shell_cmd_mkdir(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() != 1) {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-        let nowpath = Self::current_dir();
-        let path = args.get(0).unwrap();
-        let opt_path = nowpath + "/" + path;
-        let target_path;
-        if path.starts_with("/") {
-            target_path = path;
-        } else {
-            target_path = &opt_path;
-        }
-        if let Err(e) = fs::create_dir_all(target_path) {
-            print!("{e}")
-        }
-        Ok(())
-    }
-
-    fn shell_cmd_rm(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() != 1) {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-        let path = self.is_file(args.get(0).unwrap())?;
-        let path_cstr = std::ffi::CString::new(path).unwrap();
-        unsafe {
-            libc::syscall(libc::SYS_unlinkat, 0, path_cstr.as_ptr(), 0, 0, 0, 0);
-        }
-        Ok(())
-    }
-
-    fn shell_cmd_rmdir(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() != 1) {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-        let path = args.get(0).ok_or(CommandError::UnableGetArg)?;
-        let mut parent = Self::current_dir();
-        let mut child = path.clone();
-        if let Some(index) = path.rfind('/') {
-            let (str1, str2) = path.split_at(index + 1);
-            parent = String::from(str1);
-            child = String::from(str2);
-        }
-
-        let dir =
-            fs::read_dir(Path::new(&parent)).map_err(|_| CommandError::InvalidArgument(parent))?;
-
-        let is_find = dir.filter_map(Result::ok).any(|entry| {
-            entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
-                && entry.file_name().to_string_lossy().into_owned() == child
-        });
-
-        if !is_find {
-            return Err(CommandError::DirectoryNotFound(path.clone()));
-        }
-
-        let path = self.is_dir(path)?;
-        let path_cstr = std::ffi::CString::new(path).unwrap();
-        unsafe { libc::unlinkat(0, path_cstr.as_ptr(), libc::AT_REMOVEDIR) };
-
-        Ok(())
-    }
-
-    fn shell_cmd_pwd(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() != 0) {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-        println!("{}", Self::current_dir());
-        Ok(())
-    }
-
-    fn shell_cmd_cp(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if args.len() == 2 {
-            let mut src_path = args.get(0).unwrap().clone();
-            let mut target_path = args.get(1).unwrap().clone();
-
-            match self.is_file(&src_path) {
-                Ok(str) => src_path = str,
-                Err(e) => return Err(e),
-            }
-
-            match self.is_file_or_dir(&target_path) {
-                Ok(str) => target_path = str,
-                Err(e) => {
-                    let prefix = &target_path[..target_path.rfind('/').unwrap_or(0)];
-                    if !Path::new(prefix).is_dir() {
-                        return Err(e);
-                    }
-                }
-            }
-
-            if Path::new(&src_path).is_dir() {
-                let name = &src_path[src_path.rfind('/').unwrap_or(0)..];
-                target_path = format!("{}/{}", target_path, name);
-            }
-
-            let mut src_file = File::open(&src_path).unwrap();
-            let mut target_file = File::create(target_path).unwrap();
-            let mut buf: Vec<u8> = Vec::new();
-            src_file.read_to_end(&mut buf).unwrap();
-            target_file.write_all(&buf).unwrap();
-            return Ok(());
-        }
-        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     pub fn shell_cmd_exec(&self, args: &Vec<String>) -> Result<(), CommandError> {
@@ -560,41 +344,6 @@ impl Shell {
             }
         }
         return Ok(());
-    }
-
-    fn shell_cmd_echo(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if args.len() > 0 {
-            let str = args.get(0).unwrap();
-            if args.len() == 1 {
-                println!("{str}");
-            }
-
-            //TODO: 和`cat`中的一样，应放在`Shell`中
-            if args.len() == 3 {
-                let mut target_path = args.get(2).unwrap().clone();
-                match self.is_file(&target_path) {
-                    Ok(str) => target_path = str,
-                    Err(e) => return Err(e),
-                }
-                if args[1] == ">" {
-                    match OpenOptions::new().write(true).open(target_path) {
-                        Ok(mut file) => {
-                            file.write_all(str.as_bytes()).unwrap();
-                        }
-                        Err(e) => print!("{e}"),
-                    }
-                } else if args[1] == ">>" {
-                    match OpenOptions::new().append(true).open(target_path) {
-                        Ok(mut file) => {
-                            file.write_all(str.as_bytes()).unwrap();
-                        }
-                        Err(e) => print!("{e}"),
-                    }
-                }
-            }
-            return Ok(());
-        }
-        return Err(CommandError::WrongArgumentCount(args.len()));
     }
 
     fn shell_cmd_reboot(&self, args: &Vec<String>) -> Result<(), CommandError> {
@@ -673,25 +422,6 @@ impl Shell {
         Ok(())
     }
 
-    fn shell_cmd_kill(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() != 1) {
-            return Err(CommandError::WrongArgumentCount(args.len()));
-        }
-
-        let pid = match args.get(0).unwrap().parse::<i32>() {
-            Ok(x) => x,
-            Err(_) => {
-                return Err(CommandError::InvalidArgument(
-                    args.get(0).unwrap().to_string(),
-                ))
-            }
-        };
-        unsafe {
-            libc::kill(pid, libc::SIGTERM);
-        }
-        Ok(())
-    }
-
     fn shell_cmd_help(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if args.len() == 0 {
             for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
@@ -716,18 +446,6 @@ impl Shell {
             }
         }
         return Err(CommandError::WrongArgumentCount(args.len()));
-    }
-
-    fn shell_cmd_env(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if args.len() == 0 {
-            let mut file = File::open(ENV_FILE_PATH).unwrap();
-            let mut buf: Vec<u8> = Vec::new();
-            file.read_to_end(&mut buf).unwrap();
-            println!("{}", String::from_utf8(buf).unwrap());
-            return Ok(());
-        } else {
-            return Err(CommandError::InvalidArgument(args.get(0).unwrap().clone()));
-        }
     }
 
     fn shell_cmd_compgen(&self, _args: &Vec<String>) -> Result<(), CommandError> {
