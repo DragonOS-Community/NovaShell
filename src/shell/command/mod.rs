@@ -1,9 +1,9 @@
+use colored::Colorize;
 use help::Help;
 use path_clean::PathClean;
 use regex::{Captures, Regex};
 use std::intrinsics::unlikely;
 use std::io::Read;
-use std::os::unix::ffi::OsStrExt;
 use std::{
     format,
     fs::{self, File, OpenOptions},
@@ -275,6 +275,7 @@ impl Shell {
         self.chdir(&path);
         Ok(())
     }
+
 
     pub fn shell_cmd_exec(&self, args: &Vec<String>) -> Result<(), CommandError> {
         if unlikely(args.len() <= 0) {

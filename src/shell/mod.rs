@@ -85,7 +85,7 @@ impl Shell {
         crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
         loop {
             self.printer.init_before_readline();
-            if self.readline(0) == 0 {
+            if self.readline() == 0 {
                 println!();
                 break;
             }
@@ -151,7 +151,7 @@ impl Shell {
         buf[0]
     }
 
-    fn readline(&mut self, _fd: usize) -> usize {
+    fn readline(&mut self) -> usize {
         let mut stdout = std::io::stdout();
         self.history_commands.push(Rc::clone(&self.printer.buf));
         let mut command_index = self.history_commands.len() - 1;
@@ -285,9 +285,9 @@ impl Shell {
                                 println!();
                                 for candidate in candidates {
                                     print!(
-                                        "{}    ",
+                                        "{}\t",
                                         if candidate.ends_with('/') {
-                                            candidate.cyan()
+                                            candidate.truecolor(0x00, 0x88, 0xff)
                                         } else {
                                             candidate.white()
                                         }
@@ -445,14 +445,6 @@ impl Printer {
 
     fn print(bytes: &[u8]) {
         print!("{}", String::from_utf8(bytes.to_vec()).unwrap());
-    }
-
-    fn print_color(bytes: &[u8], front_color: usize, background_color: usize) {
-        std::io::stdout().flush().unwrap();
-        let cstr = std::ffi::CString::new(bytes).unwrap();
-        unsafe {
-            dsc::syscall!(SYS_PUT_STRING, cstr.as_ptr(), front_color, background_color);
-        }
     }
 }
 
