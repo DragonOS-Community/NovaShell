@@ -226,7 +226,7 @@ impl Shell {
                         let mut stack: String = String::with_capacity(str.len());
                         let mut left_quote: char = ' ';
                         for ch in iter {
-                            //存在未闭合的左引号，此时除能够配对的引号外，任何字符都加入栈中
+                            //存在未闭合的左引号，此时包括空格的任何字符都加入栈中，直到匹配到右引号
                             if left_quote != ' ' {
                                 if ch == left_quote {
                                     left_quote = ' ';
@@ -262,7 +262,7 @@ impl Shell {
                         let mut target_fragment = fragments.last().unwrap().clone();
                         target_fragment = target_fragment.replace("\'", "").replace("\"", "");
 
-                        let candidates = if fragments.len() < 2 {
+                        let (prefix, candidates) = if fragments.len() < 2 {
                             //补全命令
                             complete_command(&target_fragment)
                         } else {
@@ -277,7 +277,8 @@ impl Shell {
                                 self.printer.cursor -= old_fragment.len();
                                 self.printer.flush_cursor();
                                 self.printer.delete(old_fragment.len());
-                                self.printer.insert(candidate.as_bytes());
+                                self.printer
+                                    .insert(format!("{}{}", prefix, candidate).as_bytes());
                             }
                             2.. => {
                                 let old_cursor = self.printer.cursor;
@@ -448,6 +449,8 @@ impl Printer {
     }
 }
 
+// 测试终端颜色显示效果
+#[allow(dead_code)]
 pub fn _print_color_example() {
     let example = "abcdefghijklmnopqrstuvwxyz";
     println!("{}", example.bright_black());
@@ -470,65 +473,52 @@ pub fn _print_color_example() {
     println!("{}", example.yellow());
 }
 
-pub fn complete_command(command: &str) -> Vec<String> {
+pub fn complete_command(command: &str) -> (&str, Vec<String>) {
     let mut candidates: Vec<String> = Vec::new();
     for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
         if cmd.starts_with(command) {
             candidates.push(String::from(*cmd));
         }
     }
-    candidates
+    ("", candidates)
 }
 
-pub fn complete_path(incomplete_path: &str) -> Vec<String> {
-    let current_dir = std::env::current_dir().unwrap();
-    let current_dir = current_dir.to_str().unwrap();
-    let path = if incomplete_path.starts_with('/') {
-        String::from(incomplete_path)
-    } else {
-        format!("{}/{}", current_dir, incomplete_path)
-    };
-
+pub fn complete_path(incomplete_path: &str) -> (&str, Vec<String>) {
     let mut candidates: Vec<String> = Vec::new();
-    let dir: &str;
+    let mut dir = "";
     let incomplete_name: &str;
-    if let Some(index) = path.rfind('/') {
-        dir = &path[..=index];
-        if index < path.len() {
-            incomplete_name = &path[index + 1..];
-        } else {
-            incomplete_name = "";
-        }
+    if let Some(index) = incomplete_path.rfind('/') {
+        dir = &incomplete_path[..=index];
+        incomplete_name = &incomplete_path[index + 1..];
     } else {
-        dir = ".";
-        incomplete_name = &path[..];
+        incomplete_name = incomplete_path;
     }
-    match fs::read_dir(dir) {
-        Ok(read_dir) => {
-            if incomplete_name == "" {
-                for entry in read_dir {
-                    let entry = entry.unwrap();
-                    let mut file_name = entry.file_name().into_string().unwrap();
-                    if entry.file_type().unwrap().is_dir() {
-                        file_name.push('/');
-                    }
-                    candidates.push(file_name);
+    if let Ok(read_dir) = fs::read_dir(if dir.is_empty() { "." } else { dir }) {
+        // if incomplete_name == "" {
+        //     for entry in read_dir {
+        //         let entry = entry.unwrap();
+        //         let mut file_name = entry.file_name().into_string().unwrap();
+        //         if entry.file_type().unwrap().is_dir() {
+        //             file_name.push('/');
+        //         }
+        //         candidates.push(file_name);
+        //     }
+        // } else {
+        for entry in read_dir {
+            let entry = entry.unwrap();
+            let mut file_name = entry.file_name().into_string().unwrap();
+            if file_name.starts_with(incomplete_name) {
+                if file_name.contains(' ') {
+                    file_name = format!("\'{}\'", file_name);
                 }
-            } else {
-                for entry in read_dir {
-                    let entry = entry.unwrap();
-                    let mut file_name = entry.file_name().into_string().unwrap();
-                    if file_name.starts_with(incomplete_name) {
-                        if entry.file_type().unwrap().is_dir() {
-                            file_name.push('/');
-                        }
-                        candidates.push(file_name);
-                    }
+                if entry.file_type().unwrap().is_dir() {
+                    file_name.push('/');
                 }
+                candidates.push(file_name);
             }
         }
-
-        Err(_) => {}
+        // }
     }
-    return candidates;
+
+    return (dir, candidates);
 }
