@@ -1,20 +1,11 @@
-use colored::Colorize;
 use help::Help;
 use path_clean::PathClean;
 use regex::{Captures, Regex};
 use std::intrinsics::unlikely;
 use std::io::Read;
-use std::{
-    format,
-    fs::{self, File, OpenOptions},
-    io::Write,
-    path::Path,
-    print, println,
-    string::String,
-    vec::Vec,
-};
+use std::{format, fs::File, path::Path, print, println, string::String, vec::Vec};
 
-use crate::env::{Env, ENV_FILE_PATH, ROOT_PATH};
+use crate::env::{Env, ROOT_PATH};
 use crate::shell::Shell;
 
 mod help;
@@ -31,6 +22,7 @@ pub struct Command {
     cmd_type: CommandType,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CommandError {
     CommandNotFound(String),
@@ -497,6 +489,7 @@ impl Shell {
         }
     }
 
+    #[allow(dead_code)]
     fn is_file_or_dir(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => Ok(path_str),
