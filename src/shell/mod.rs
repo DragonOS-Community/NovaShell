@@ -101,12 +101,12 @@ impl Shell {
             {
                 self.history_commands
                     .push(Rc::new(RefCell::new(command_bytes.clone())));
+                self.write_commands();
             };
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
             }
         }
-        self.write_commands();
     }
 
     fn exec_commands_in_line(&mut self, command_bytes: &Vec<u8>) {
@@ -136,7 +136,7 @@ impl Shell {
 
     fn write_commands(&self) {
         let mut file = OpenOptions::new()
-            .append(false)
+            .write(true).truncate(true)
             .open("history_commands.txt")
             .unwrap();
         for command_line in &self.history_commands {
