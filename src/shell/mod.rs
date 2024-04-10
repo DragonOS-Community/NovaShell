@@ -136,7 +136,8 @@ impl Shell {
 
     fn write_commands(&self) {
         let mut file = OpenOptions::new()
-            .write(true).truncate(true)
+            .write(true)
+            .truncate(true)
             .open("history_commands.txt")
             .unwrap();
         for command_line in &self.history_commands {
