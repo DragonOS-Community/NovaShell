@@ -49,6 +49,8 @@ impl fmt::Display for Prompt {
     }
 }
 
+const DEFAULT_HISTORY_COMMANDS_PATH: &str = "/history_commands.txt";
+
 pub struct Shell {
     history_commands: Vec<Rc<RefCell<Vec<u8>>>>,
     history_path: String,
@@ -59,7 +61,7 @@ impl Shell {
     pub fn new() -> Shell {
         let mut shell = Shell {
             history_commands: Vec::new(),
-            history_path: "history_commands.txt".to_string(),
+            history_path: DEFAULT_HISTORY_COMMANDS_PATH.to_string(),
             printer: Printer::new(&Rc::new(RefCell::new(Vec::new()))),
         };
         shell.read_commands();
@@ -90,7 +92,8 @@ impl Shell {
                 break;
             }
             let command_bytes = self.printer.buf.borrow().clone();
-            if !command_bytes.starts_with(&[b' '])
+            if !command_bytes.is_empty()
+                && !command_bytes.starts_with(&[b' '])
                 && command_bytes
                     != self
                         .history_commands
@@ -101,7 +104,7 @@ impl Shell {
             {
                 self.history_commands
                     .push(Rc::new(RefCell::new(command_bytes.clone())));
-                self.write_commands();
+                self.write_commands(&command_bytes);
             };
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
@@ -134,16 +137,14 @@ impl Shell {
         self.history_commands = history;
     }
 
-    fn write_commands(&self) {
+    fn write_commands(&self, command_bytes: &Vec<u8>) {
         let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open("history_commands.txt")
+            .append(true)
+            .open(self.history_path.as_str())
             .unwrap();
-        for command_line in &self.history_commands {
-            file.write_all(&command_line.borrow()[..]).unwrap();
-            file.write_all(&[SpecialKeycode::LF.into()]).unwrap();
-        }
+        file.write_all(&command_bytes)
+            .expect("failed to write history command");
+        file.write_all(&[SpecialKeycode::LF.into()]).unwrap();
     }
 
     fn read_char() -> u8 {
