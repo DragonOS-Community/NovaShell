@@ -1,18 +1,20 @@
 use core::fmt;
 use std::{
     cell::RefCell,
+    collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{self, stdout, BufRead, BufReader, Read, Write},
     ops::Deref,
     path::Path,
     print,
+    process::Child,
     rc::Rc,
 };
 
 use crate::keycode::{FunctionKeySuffix, SpecialKeycode};
 
 use colored::Colorize;
-use command::{BuildInCmd, Command};
+use command::{BuildInCmd, Command, CommandError};
 
 pub mod command;
 
@@ -53,6 +55,7 @@ pub struct Shell {
     history_commands: Vec<Rc<RefCell<Vec<u8>>>>,
     history_path: String,
     printer: Printer,
+    backend_task: HashMap<usize, Child>,
 }
 
 impl Shell {
@@ -61,6 +64,7 @@ impl Shell {
             history_commands: Vec::new(),
             history_path: DEFAULT_HISTORY_COMMANDS_PATH.to_string(),
             printer: Printer::new(&Rc::new(RefCell::new(Vec::new()))),
+            backend_task: HashMap::new(),
         };
         shell.read_commands();
         shell
@@ -74,14 +78,21 @@ impl Shell {
     }
 
     pub fn exec(&mut self) {
+        // 开启终端raw模式
         crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
+
+        // 循环读取一行
         loop {
             self.printer.init_before_readline();
+            // 读取一行
             if self.readline() == 0 {
                 println!();
                 break;
             }
+
             let command_bytes = self.printer.buf.borrow().clone();
+
+            // 如果命令不以空格开头且不跟上一条命令相同，这条命令会被记录
             if !command_bytes.is_empty()
                 && !command_bytes.starts_with(&[b' '])
                 && command_bytes
@@ -96,17 +107,22 @@ impl Shell {
                     .push(Rc::new(RefCell::new(command_bytes.clone())));
                 self.write_commands(&command_bytes);
             };
+
+            // 命令不为空，执行命令
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
             }
+            self.detect_task_done();
         }
     }
 
     fn exec_commands_in_line(&mut self, command_bytes: &Vec<u8>) {
-        let commands = Command::from_strings(String::from_utf8(command_bytes.clone()).unwrap());
-        commands
-            .iter()
-            .for_each(|command| self.exec_command(command));
+        match Command::parse(String::from_utf8(command_bytes.clone()).unwrap()) {
+            Ok(commands) => commands
+                .into_iter()
+                .for_each(|command| self.exec_command(command)),
+            Err(e) => CommandError::handle(e),
+        }
     }
 
     pub fn read_commands(&mut self) {
@@ -139,8 +155,11 @@ impl Shell {
 
     fn read_char() -> u8 {
         let mut buf: [u8; 1] = [0];
-        std::io::stdin().read(&mut buf).expect("read char error");
-        buf[0]
+        loop {
+            if std::io::stdin().read(&mut buf).is_ok() {
+                return buf[0];
+            }
+        }
     }
 
     fn readline(&mut self) -> usize {
@@ -308,6 +327,27 @@ impl Shell {
             }
             stdout.flush().unwrap();
         }
+    }
+
+    fn add_backend_task(&mut self, child: Child) {
+        let mut job_id = 1;
+        while self.backend_task.contains_key(&job_id) {
+            job_id += 1;
+        }
+
+        println!("[{}] {}", job_id, child.id());
+        self.backend_task.insert(job_id, child);
+    }
+
+    fn detect_task_done(&mut self) {
+        self.backend_task.retain(|job_id, task| {
+            if let Ok(Some(status)) = task.try_wait() {
+                println!("[{}] done with status: {}", job_id, status);
+                false
+            } else {
+                true
+            }
+        })
     }
 }
 
