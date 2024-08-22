@@ -36,6 +36,9 @@ doc:
 fmt:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) fmt
 
+check:
+	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) check --all-features
+
 fmt-check:
 	RUSTFLAGS=$(RUSTFLAGS) cargo $(TOOLCHAIN) fmt --check
 
