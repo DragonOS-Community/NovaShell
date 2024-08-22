@@ -3,8 +3,6 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
-    string::String,
-    vec::Vec,
 };
 
 pub const ROOT_PATH: &str = "/";

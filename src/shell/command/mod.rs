@@ -3,7 +3,7 @@ use path_clean::PathClean;
 use regex::{Captures, Regex};
 use std::intrinsics::unlikely;
 use std::io::Read;
-use std::{format, fs::File, path::Path, print, println, string::String, vec::Vec};
+use std::{format, fs::File, path::Path, print, println};
 
 use crate::env::{Env, ROOT_PATH};
 use crate::shell::Shell;
@@ -196,7 +196,7 @@ impl Command {
 pub struct BuildInCmd(pub &'static str);
 
 impl BuildInCmd {
-    pub const BUILD_IN_CMD: &[BuildInCmd] = &[
+    pub const BUILD_IN_CMD: &'static [BuildInCmd] = &[
         BuildInCmd("cd"),
         BuildInCmd("exec"),
         BuildInCmd("reboot"),

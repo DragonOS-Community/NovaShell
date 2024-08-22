@@ -7,8 +7,6 @@ use std::{
     path::Path,
     print,
     rc::Rc,
-    string::String,
-    vec::Vec,
 };
 
 use crate::keycode::{FunctionKeySuffix, SpecialKeycode};
