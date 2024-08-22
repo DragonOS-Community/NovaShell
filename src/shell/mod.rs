@@ -66,14 +66,6 @@ impl Shell {
         shell
     }
 
-    pub fn current_dir() -> String {
-        std::env::current_dir()
-            .expect("Error getting current directory")
-            .to_str()
-            .unwrap()
-            .to_string()
-    }
-
     pub fn chdir(&mut self, new_dir: &String) {
         let path = Path::new(&new_dir);
         if let Err(e) = std::env::set_current_dir(&path) {

@@ -152,7 +152,7 @@ impl Command {
         let re: Regex = Regex::new(r"\$[\w_]+").unwrap();
         let replacement = |caps: &Captures| -> String {
             match Env::get(&String::from(&caps[0][1..])) {
-                Some(value) => value,
+                Some(entry) => entry.origin().clone(),
                 None => String::from(&caps[0]),
             }
         };
@@ -272,37 +272,20 @@ impl Shell {
         if unlikely(args.len() <= 0) {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
-        let path = args.get(0).unwrap();
-        //在环境变量中搜索
-        //TODO: 放在一个函数里来实现
-        let mut real_path = String::new();
-        if !path.contains('/') {
-            let mut dir_collection = Env::path();
-            dir_collection.insert(0, Self::current_dir());
-            for dir in dir_collection {
-                let possible_path = format!("{}/{}", dir, path);
-                if Path::new(&possible_path).is_file() {
-                    real_path = possible_path;
-                    break;
-                }
-            }
-            if real_path.is_empty() {
-                return Err(CommandError::FileNotFound(path.clone()));
-            }
-        } else {
-            match self.is_file(path) {
-                Ok(path) => real_path = path,
-                Err(e) => return Err(e),
-            }
-        }
 
-        let mut args = args.clone();
+        let path = args.get(0).unwrap();
+        let real_path = match Env::search_path_from_env(path) {
+            Some(str) => str,
+            None => return Err(CommandError::FileNotFound(path.clone())),
+        };
+
         // 如果文件不存在，返回错误
         if !Path::new(&real_path).is_file() {
             // println!("{}: command not found", real_path);
-            return Err(CommandError::FileNotFound(real_path.clone()));
+            return Err(CommandError::NotFile(real_path.clone()));
         }
 
+        let mut args = args.clone();
         let pid: libc::pid_t = unsafe {
             libc::syscall(libc::SYS_fork, 0, 0, 0, 0, 0, 0)
                 .try_into()
@@ -453,7 +436,7 @@ impl Shell {
     fn path_format(&self, path: &String) -> Result<String, CommandError> {
         let mut abs_path = path.clone();
         if !path.starts_with('/') {
-            abs_path = format!("{}/{}", Self::current_dir(), path);
+            abs_path = format!("{}/{}", Env::current_dir(), path);
         }
         let path = Path::new(&abs_path).clean();
         let mut fmt_path = path.to_str().unwrap().to_string();
@@ -463,6 +446,7 @@ impl Shell {
         return Ok(fmt_path);
     }
 
+    #[allow(dead_code)]
     fn is_file(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => {
@@ -476,6 +460,7 @@ impl Shell {
         }
     }
 
+    #[allow(dead_code)]
     fn is_dir(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => {

@@ -5,9 +5,6 @@
 extern crate libc;
 
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 extern crate num_derive;
 
 mod shell;
@@ -20,7 +17,7 @@ use env::Env;
 use shell::Shell;
 
 fn main() {
-    Env::read_env();
+    Env::init();
     let mut shell = Shell::new();
     shell.exec();
     return;
