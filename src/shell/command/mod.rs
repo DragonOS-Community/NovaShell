@@ -152,6 +152,10 @@ impl Command {
             if left_quote == ' ' {
                 //不存在未闭合的引号，将栈中剩余内容作为命令段加入集合，并构造命令
                 fragments.push(stack.to_string());
+                match Self::build_command_from_fragments(&fragments, false) {
+                    Ok(command) => commands.push(command),
+                    Err(e) => return Err(e),
+                }
             } else {
                 //存在未闭合的引号，返回此引号的下标
                 return Err(CommandError::UnclosedQuotation(left_quote_index));
@@ -243,7 +247,6 @@ impl Shell {
     }
 
     pub fn exec_command(&mut self, mut command: Command) {
-        println!("command: {:?}", command);
         if command.run_backend {
             command.args.push("&".to_string());
         }
@@ -295,9 +298,13 @@ impl Shell {
         // let name = &real_path[real_path.rfind('/').map(|pos| pos + 1).unwrap_or(0)..];
         // *args.get_mut(0).unwrap() = name.to_string();
         let mut args = args.split_first().unwrap().1;
-        let run_backend = if args.last().unwrap() == "&" {
-            args = &args[..args.len() - 1];
-            true
+        let run_backend = if let Some(last) = args.last() {
+            if last == "&" {
+                args = &args[..args.len() - 1];
+                true
+            } else {
+                false
+            }
         } else {
             false
         };
