@@ -89,12 +89,14 @@ impl DerefMut for Env {
 }
 
 impl Env {
+    /// 初始化环境变量结构体
     pub fn init() {
         // unsafe { ENV = Some(std::sync::Mutex::new(Env(HashMap::new()))) };
         unsafe { ENV = Some(Env(HashMap::new())) };
         Self::read_env();
     }
 
+    /// 获取Env引用
     pub fn env() -> &'static mut Env {
         unsafe { ENV.as_mut().unwrap() }
     }
@@ -137,6 +139,7 @@ impl Env {
         }
     }
 
+    /// 获取PATH环境变量的值（已分割）
     pub fn path() -> Vec<String> {
         let env = Self::env();
         env.get("PATH").unwrap().collection.clone()
@@ -184,5 +187,14 @@ impl Env {
         } else {
             return None;
         }
+    }
+
+    /// 返回所有环境变量的集合
+    pub fn get_all() -> Vec<(String, String)> {
+        let mut vec = Vec::new();
+        for (name, entry) in Self::env().iter() {
+            vec.push((name.clone(), entry.origin.clone()));
+        }
+        vec
     }
 }

@@ -285,39 +285,49 @@ impl Shell {
             return Err(CommandError::NotFile(real_path.clone()));
         }
 
+        // let name = &real_path[real_path.rfind('/').map(|pos| pos + 1).unwrap_or(0)..];
         let mut args = args.clone();
-        let pid: libc::pid_t = unsafe {
-            libc::syscall(libc::SYS_fork, 0, 0, 0, 0, 0, 0)
-                .try_into()
-                .unwrap()
-        };
+        // *args.get_mut(0).unwrap() = name.to_string();
 
-        let name = &real_path[real_path.rfind('/').map(|pos| pos + 1).unwrap_or(0)..];
-        *args.get_mut(0).unwrap() = name.to_string();
-        let mut retval = 0;
-        if pid == 0 {
-            let path_cstr = std::ffi::CString::new(real_path).unwrap();
-            let args_cstr = args
-                .iter()
-                .map(|str| std::ffi::CString::new(str.as_str()).unwrap())
-                .collect::<Vec<std::ffi::CString>>();
-            let mut args_ptr = args_cstr
-                .iter()
-                .map(|c_str| c_str.as_ptr())
-                .collect::<Vec<*const i8>>();
-            args_ptr.push(std::ptr::null());
-            let argv = args_ptr.as_ptr();
+        let mut child = std::process::Command::new(real_path)
+            .args(args.split_off(1))
+            .current_dir(Env::current_dir())
+            .envs(Env::get_all())
+            .spawn()
+            .expect("Failed to execute command");
 
-            unsafe {
-                libc::execv(path_cstr.as_ptr(), argv);
-            }
-        } else {
-            if args.last().unwrap() != &"&" {
-                unsafe { libc::waitpid(pid, &mut retval as *mut i32, 0) };
-            } else {
-                println!("[1] {}", pid);
-            }
-        }
+        let _ = child.wait();
+
+        // let pid: libc::pid_t = unsafe {
+        //     libc::syscall(libc::SYS_fork, 0, 0, 0, 0, 0, 0)
+        //         .try_into()
+        //         .unwrap()
+        // };
+
+        // let mut retval = 0;
+        // if pid == 0 {
+        //     let path_cstr = std::ffi::CString::new(real_path).unwrap();
+        //     let args_cstr = args
+        //         .iter()
+        //         .map(|str| std::ffi::CString::new(str.as_str()).unwrap())
+        //         .collect::<Vec<std::ffi::CString>>();
+        //     let mut args_ptr = args_cstr
+        //         .iter()
+        //         .map(|c_str| c_str.as_ptr())
+        //         .collect::<Vec<*const i8>>();
+        //     args_ptr.push(std::ptr::null());
+        //     let argv = args_ptr.as_ptr();
+
+        //     unsafe {
+        //         libc::execv(path_cstr.as_ptr(), argv);
+        //     }
+        // } else {
+        //     if args.last().unwrap() != &"&" {
+        //         unsafe { libc::waitpid(pid, &mut retval as *mut i32, 0) };
+        //     } else {
+        //         println!("[1] {}", pid);
+        //     }
+        // }
         return Ok(());
     }
 
