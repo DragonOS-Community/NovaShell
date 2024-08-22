@@ -1,9 +1,7 @@
 use help::Help;
 use path_clean::PathClean;
 use regex::{Captures, Regex};
-use std::intrinsics::unlikely;
-use std::io::Read;
-use std::{format, fs::File, path::Path, print, println};
+use std::{format, fs::File, io::Read, path::Path, print, println};
 
 use crate::env::{Env, ROOT_PATH};
 use crate::shell::Shell;
@@ -279,7 +277,7 @@ impl Shell {
     }
 
     pub fn shell_cmd_exec(&mut self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() <= 0) {
+        if args.len() <= 0 {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
 

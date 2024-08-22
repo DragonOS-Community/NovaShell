@@ -1,9 +1,9 @@
-use std::fmt;
-use std::ops::{Deref, DerefMut};
 use std::{
     collections::HashMap,
+    fmt,
     fs::File,
     io::{Read, Write},
+    ops::{Deref, DerefMut},
     path::Path,
 };
 

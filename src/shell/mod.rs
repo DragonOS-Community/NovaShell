@@ -1,7 +1,7 @@
-use core::fmt;
 use std::{
     cell::RefCell,
     collections::HashMap,
+    fmt,
     fs::{self, File, OpenOptions},
     io::{self, stdout, BufRead, BufReader, Read, Write},
     ops::Deref,
