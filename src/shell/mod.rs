@@ -218,7 +218,7 @@ impl Shell {
                         buf.truncate(self.printer.cursor);
                         let str = String::from_utf8(buf.clone()).unwrap();
                         if buf.len() == 0 || buf.iter().all(|byte| *byte == b' ') {
-                            return 1;
+                            continue;
                         }
 
                         let iter = str.chars();
@@ -320,8 +320,11 @@ impl Shell {
 }
 
 struct Printer {
+    /// 提示语
     prompt: Prompt,
+    /// 缓存区，记录当前显示的内容
     buf: Rc<RefCell<Vec<u8>>>,
+    /// 光标位置（不包括提示语）
     cursor: usize,
 }
 
@@ -343,6 +346,7 @@ impl Printer {
         }
     }
 
+    /// 读取输入前初始化信息
     fn init_before_readline(&mut self) {
         self.buf = Rc::new(RefCell::new(Vec::new()));
         self.prompt.update_path();
@@ -356,7 +360,7 @@ impl Printer {
         stdout().flush().unwrap();
     }
 
-    //在光标处插入字符串
+    /// 在光标处插入字符串
     fn insert(&mut self, bytes: &[u8]) {
         let mut buf = self.buf.deref().borrow_mut();
         // self.delete_to_cursor(buf.len() - cursor);
@@ -369,7 +373,7 @@ impl Printer {
         stdout().flush().unwrap();
     }
 
-    //删除下标为[cursor,cursor + len)的字符，光标位置不变
+    /// 删除下标为[cursor,cursor + len)的字符，光标位置不变
     fn delete(&self, len: usize) {
         let cursor = self.cursor;
         let mut buf = self.buf.deref().borrow_mut();
