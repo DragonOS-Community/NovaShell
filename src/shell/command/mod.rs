@@ -293,8 +293,6 @@ impl Shell {
             return Err(CommandError::NotFile(real_path.clone()));
         }
 
-        // let name = &real_path[real_path.rfind('/').map(|pos| pos + 1).unwrap_or(0)..];
-        // *args.get_mut(0).unwrap() = name.to_string();
         let mut args = args.split_first().unwrap().1;
         let run_backend = if let Some(last) = args.last() {
             if last == "&" {
@@ -306,6 +304,8 @@ impl Shell {
         } else {
             false
         };
+
+        crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
 
         let mut child = std::process::Command::new(real_path)
             .args(args)
@@ -320,36 +320,7 @@ impl Shell {
             self.add_backend_task(child);
         }
 
-        // let pid: libc::pid_t = unsafe {
-        //     libc::syscall(libc::SYS_fork, 0, 0, 0, 0, 0, 0)
-        //         .try_into()
-        //         .unwrap()
-        // };
-
-        // let mut retval = 0;
-        // if pid == 0 {
-        //     let path_cstr = std::ffi::CString::new(real_path).unwrap();
-        //     let args_cstr = args
-        //         .iter()
-        //         .map(|str| std::ffi::CString::new(str.as_str()).unwrap())
-        //         .collect::<Vec<std::ffi::CString>>();
-        //     let mut args_ptr = args_cstr
-        //         .iter()
-        //         .map(|c_str| c_str.as_ptr())
-        //         .collect::<Vec<*const i8>>();
-        //     args_ptr.push(std::ptr::null());
-        //     let argv = args_ptr.as_ptr();
-
-        //     unsafe {
-        //         libc::execv(path_cstr.as_ptr(), argv);
-        //     }
-        // } else {
-        //     if args.last().unwrap() != &"&" {
-        //         unsafe { libc::waitpid(pid, &mut retval as *mut i32, 0) };
-        //     } else {
-        //         println!("[1] {}", pid);
-        //     }
-        // }
+        crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
         return Ok(());
     }
 
