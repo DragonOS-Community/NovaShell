@@ -1,9 +1,7 @@
 use help::Help;
 use path_clean::PathClean;
 use regex::{Captures, Regex};
-use std::intrinsics::unlikely;
-use std::io::Read;
-use std::{format, fs::File, path::Path, print, println, string::String, vec::Vec};
+use std::{format, fs::File, io::Read, path::Path, print, println};
 
 use crate::env::{Env, ROOT_PATH};
 use crate::shell::Shell;
@@ -20,6 +18,7 @@ enum CommandType {
 pub struct Command {
     args: Vec<String>,
     cmd_type: CommandType,
+    run_backend: bool,
 }
 
 #[allow(dead_code)]
@@ -36,6 +35,7 @@ pub enum CommandError {
     NotFile(String),
     UnclosedQuotation(usize),
     UnableGetArg,
+    EmptyCommand,
 }
 
 impl CommandError {
@@ -74,17 +74,19 @@ impl CommandError {
             CommandError::UnableGetArg => {
                 println!("unable to get argument")
             }
+            CommandError::EmptyCommand => println!("try to construct an empty command"),
         }
     }
 }
 
 impl Command {
-    fn new(name: String, args: Vec<String>) -> Result<Command, CommandError> {
+    fn new(name: String, args: Vec<String>, run_backend: bool) -> Result<Command, CommandError> {
         for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
             if name == *cmd {
                 return Ok(Command {
                     args,
                     cmd_type: CommandType::InternalCommand(BuildInCmd(cmd)),
+                    run_backend,
                 });
             }
         }
@@ -92,15 +94,17 @@ impl Command {
         return Ok(Command {
             args,
             cmd_type: CommandType::ExternalCommand(name),
+            run_backend,
         });
     }
 
-    fn parse_command_into_fragments(str: String) -> Result<Vec<String>, usize> {
+    pub fn parse(str: String) -> Result<Vec<Command>, CommandError> {
         let iter = str.chars();
         let mut fragments: Vec<String> = Vec::new();
         let mut stack: String = String::with_capacity(str.len());
         let mut left_quote: char = ' ';
         let mut left_quote_index: usize = 0;
+        let mut commands: Vec<Command> = Vec::new();
         for (index, ch) in iter.enumerate() {
             //存在未闭合的左引号，此时除能够配对的引号外，任何字符都加入栈中
             if left_quote != ' ' {
@@ -115,13 +119,26 @@ impl Command {
                     //字符为引号，记录下来
                     left_quote = ch;
                     left_quote_index = index;
-                } else if ch == ' ' {
+                } else if ch == ' ' && !stack.is_empty() {
+                    //字符为空格且栈中不为空，该空格视作命令段之间的分割线
+                    //将栈中字符作为一个命令段加入集合，之后重置栈
+                    fragments.push(stack.to_string());
+                    stack.clear();
+                } else if ch == ';' || ch == '&' {
+                    // ;和&视作命令之间的分隔，且&标志命令后台运行
+                    // 使用命令段构造一条命令
                     if !stack.is_empty() {
-                        //字符为空格且栈中不为空，该空格视作命令段之间的分割线
-                        //将栈中字符作为一个命令段加入集合，之后重置栈
                         fragments.push(stack.to_string());
                         stack.clear();
                     }
+                    if !fragments.is_empty() {
+                        match Self::build_command_from_fragments(&fragments, ch == '&') {
+                            Ok(command) => commands.push(command),
+                            Err(e) => return Err(e),
+                        }
+                    }
+
+                    fragments.clear();
                 } else {
                     //其他字符都作为普通字符加入栈中
                     stack.push(ch);
@@ -131,33 +148,40 @@ impl Command {
         //结束时如果栈不为空
         if !stack.is_empty() {
             if left_quote == ' ' {
-                //不存在未闭合的引号，将栈中剩余内容作为命令段加入集合
+                //不存在未闭合的引号，将栈中剩余内容作为命令段加入集合，并构造命令
                 fragments.push(stack.to_string());
+                match Self::build_command_from_fragments(&fragments, false) {
+                    Ok(command) => commands.push(command),
+                    Err(e) => return Err(e),
+                }
             } else {
                 //存在未闭合的引号，返回此引号的下标
-                return Err(left_quote_index);
+                return Err(CommandError::UnclosedQuotation(left_quote_index));
             }
         }
-        Ok(fragments)
+        Ok(commands)
     }
 
-    fn from_string(str: String) -> Result<Command, CommandError> {
-        let iter = Self::parse_command_into_fragments(str);
-        if let Err(index) = iter {
-            return Err(CommandError::UnclosedQuotation(index));
+    fn build_command_from_fragments(
+        fragments: &Vec<String>,
+        run_backend: bool,
+    ) -> Result<Command, CommandError> {
+        if fragments.len() == 0 {
+            return Err(CommandError::EmptyCommand);
         }
-        let mut iter = iter.unwrap().into_iter();
+
+        let mut iter = fragments.into_iter();
 
         let name = iter.next().unwrap();
         let re: Regex = Regex::new(r"\$[\w_]+").unwrap();
         let replacement = |caps: &Captures| -> String {
             match Env::get(&String::from(&caps[0][1..])) {
-                Some(value) => value,
+                Some(entry) => entry.origin().clone(),
                 None => String::from(&caps[0]),
             }
         };
         let mut args: Vec<String> = Vec::new();
-        for arg in iter.collect::<Vec<String>>().iter() {
+        for arg in iter.collect::<Vec<&String>>().iter() {
             let arg = re.replace_all(arg.as_str(), &replacement).to_string();
             match re.captures(arg.as_str()) {
                 Some(caps) => {
@@ -168,27 +192,7 @@ impl Command {
                 None => args.push(arg),
             }
         }
-        let cmd = Command::new(name, args);
-        return cmd;
-    }
-
-    pub fn from_strings(str: String) -> Vec<Command> {
-        let mut commands = Vec::new();
-        let segments: Vec<&str> = str.split(';').collect();
-        for segment in segments {
-            if segment.trim().is_empty() {
-                continue;
-            } else {
-                match Command::from_string(String::from(segment)) {
-                    Ok(s) => commands.push(s),
-                    Err(e) => {
-                        CommandError::handle(e);
-                    }
-                }
-            }
-        }
-
-        commands
+        Command::new(name.clone(), args, run_backend)
     }
 }
 
@@ -196,7 +200,7 @@ impl Command {
 pub struct BuildInCmd(pub &'static str);
 
 impl BuildInCmd {
-    pub const BUILD_IN_CMD: &[BuildInCmd] = &[
+    pub const BUILD_IN_CMD: &'static [BuildInCmd] = &[
         BuildInCmd("cd"),
         BuildInCmd("exec"),
         BuildInCmd("reboot"),
@@ -240,7 +244,11 @@ impl Shell {
         })
     }
 
-    pub fn exec_command(&mut self, command: &Command) {
+    pub fn exec_command(&mut self, mut command: Command) {
+        if command.run_backend {
+            command.args.push("&".to_string());
+        }
+
         match &command.cmd_type {
             CommandType::ExternalCommand(path) => {
                 self.exec_external_command(path.to_string(), &command.args);
@@ -268,73 +276,51 @@ impl Shell {
         Ok(())
     }
 
-    pub fn shell_cmd_exec(&self, args: &Vec<String>) -> Result<(), CommandError> {
-        if unlikely(args.len() <= 0) {
+    pub fn shell_cmd_exec(&mut self, args: &Vec<String>) -> Result<(), CommandError> {
+        if args.len() <= 0 {
             return Err(CommandError::WrongArgumentCount(args.len()));
         }
-        let path = args.get(0).unwrap();
-        //在环境变量中搜索
-        //TODO: 放在一个函数里来实现
-        let mut real_path = String::new();
-        if !path.contains('/') {
-            let mut dir_collection = Env::path();
-            dir_collection.insert(0, Self::current_dir());
-            for dir in dir_collection {
-                let possible_path = format!("{}/{}", dir, path);
-                if Path::new(&possible_path).is_file() {
-                    real_path = possible_path;
-                    break;
-                }
-            }
-            if real_path.is_empty() {
-                return Err(CommandError::FileNotFound(path.clone()));
-            }
-        } else {
-            match self.is_file(path) {
-                Ok(path) => real_path = path,
-                Err(e) => return Err(e),
-            }
-        }
 
-        let mut args = args.clone();
+        let path = args.get(0).unwrap();
+        let real_path = match Env::search_path_from_env(path) {
+            Some(str) => str,
+            None => return Err(CommandError::FileNotFound(path.clone())),
+        };
+
         // 如果文件不存在，返回错误
         if !Path::new(&real_path).is_file() {
             // println!("{}: command not found", real_path);
-            return Err(CommandError::FileNotFound(real_path.clone()));
+            return Err(CommandError::NotFile(real_path.clone()));
         }
 
-        let pid: libc::pid_t = unsafe {
-            libc::syscall(libc::SYS_fork, 0, 0, 0, 0, 0, 0)
-                .try_into()
-                .unwrap()
-        };
-
-        let name = &real_path[real_path.rfind('/').map(|pos| pos + 1).unwrap_or(0)..];
-        *args.get_mut(0).unwrap() = name.to_string();
-        let mut retval = 0;
-        if pid == 0 {
-            let path_cstr = std::ffi::CString::new(real_path).unwrap();
-            let args_cstr = args
-                .iter()
-                .map(|str| std::ffi::CString::new(str.as_str()).unwrap())
-                .collect::<Vec<std::ffi::CString>>();
-            let mut args_ptr = args_cstr
-                .iter()
-                .map(|c_str| c_str.as_ptr())
-                .collect::<Vec<*const i8>>();
-            args_ptr.push(std::ptr::null());
-            let argv = args_ptr.as_ptr();
-
-            unsafe {
-                libc::execv(path_cstr.as_ptr(), argv);
+        let mut args = args.split_first().unwrap().1;
+        let run_backend = if let Some(last) = args.last() {
+            if last == "&" {
+                args = &args[..args.len() - 1];
+                true
+            } else {
+                false
             }
         } else {
-            if args.last().unwrap() != &"&" {
-                unsafe { libc::waitpid(pid, &mut retval as *mut i32, 0) };
-            } else {
-                println!("[1] {}", pid);
-            }
+            false
+        };
+
+        crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
+
+        let mut child = std::process::Command::new(real_path)
+            .args(args)
+            .current_dir(Env::current_dir())
+            .envs(Env::get_all())
+            .spawn()
+            .expect("Failed to execute command");
+
+        if !run_backend {
+            let _ = child.wait();
+        } else {
+            self.add_backend_task(child);
         }
+
+        crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
         return Ok(());
     }
 
@@ -453,7 +439,7 @@ impl Shell {
     fn path_format(&self, path: &String) -> Result<String, CommandError> {
         let mut abs_path = path.clone();
         if !path.starts_with('/') {
-            abs_path = format!("{}/{}", Self::current_dir(), path);
+            abs_path = format!("{}/{}", Env::current_dir(), path);
         }
         let path = Path::new(&abs_path).clean();
         let mut fmt_path = path.to_str().unwrap().to_string();
@@ -463,6 +449,7 @@ impl Shell {
         return Ok(fmt_path);
     }
 
+    #[allow(dead_code)]
     fn is_file(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => {
@@ -476,6 +463,7 @@ impl Shell {
         }
     }
 
+    #[allow(dead_code)]
     fn is_dir(&self, path_str: &String) -> Result<String, CommandError> {
         match self.path_format(path_str) {
             Ok(path_str) => {
