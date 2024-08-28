@@ -53,11 +53,15 @@ impl Shell {
 
     pub fn exec(&mut self) {
         // 开启终端raw模式
+        // 开启终端raw模式
         crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
+
+        // 循环读取一行
 
         // 循环读取一行
         loop {
             self.printer.init_before_readline();
+            // 读取一行
             // 读取一行
             if self.readline() == 0 {
                 println!();
@@ -65,6 +69,8 @@ impl Shell {
             }
 
             let command_bytes = self.printer.buf.borrow().clone();
+
+            // 如果命令不以空格开头且不跟上一条命令相同，这条命令会被记录
 
             // 如果命令不以空格开头且不跟上一条命令相同，这条命令会被记录
             if !command_bytes.is_empty()
@@ -81,6 +87,8 @@ impl Shell {
                     .push(Rc::new(RefCell::new(command_bytes.clone())));
                 self.write_commands(&command_bytes);
             };
+
+            // 命令不为空，执行命令
 
             // 命令不为空，执行命令
             if !command_bytes.iter().all(|&byte| byte == b' ') {
@@ -356,30 +364,6 @@ impl WindowSize {
     }
 }
 
-// 测试终端颜色显示效果
-#[allow(dead_code)]
-pub fn _print_color_example() {
-    let example = "abcdefghijklmnopqrstuvwxyz";
-    println!("{}", example.bright_black());
-    println!("{}", example.bright_blue());
-    println!("{}", example.bright_cyan());
-    println!("{}", example.bright_green());
-    println!("{}", example.bright_magenta());
-    println!("{}", example.bright_purple());
-    println!("{}", example.bright_red());
-    println!("{}", example.bright_white());
-    println!("{}", example.bright_yellow());
-    println!("{}", example.black());
-    println!("{}", example.blue());
-    println!("{}", example.cyan());
-    println!("{}", example.green());
-    println!("{}", example.magenta());
-    println!("{}", example.purple());
-    println!("{}", example.red());
-    println!("{}", example.white());
-    println!("{}", example.yellow());
-}
-
 pub fn complete_command(command: &str) -> (&str, Vec<String>) {
     let mut candidates: Vec<String> = Vec::new();
     for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
@@ -401,16 +385,6 @@ pub fn complete_path(incomplete_path: &str) -> (&str, Vec<String>) {
         incomplete_name = incomplete_path;
     }
     if let Ok(read_dir) = fs::read_dir(if dir.is_empty() { "." } else { dir }) {
-        // if incomplete_name == "" {
-        //     for entry in read_dir {
-        //         let entry = entry.unwrap();
-        //         let mut file_name = entry.file_name().into_string().unwrap();
-        //         if entry.file_type().unwrap().is_dir() {
-        //             file_name.push('/');
-        //         }
-        //         candidates.push(file_name);
-        //     }
-        // } else {
         for entry in read_dir {
             let entry = entry.unwrap();
             let mut file_name = entry.file_name().into_string().unwrap();
@@ -424,7 +398,6 @@ pub fn complete_path(incomplete_path: &str) -> (&str, Vec<String>) {
                 candidates.push(file_name);
             }
         }
-        // }
     }
 
     return (dir, candidates);

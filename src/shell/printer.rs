@@ -40,7 +40,6 @@ impl Printer {
         self.buf = Rc::new(RefCell::new(Vec::new()));
         self.prompt.update_path();
         self.print_prompt();
-        // self.cursor = crossterm::cursor::position().map_or(0, |(top, left)| left as usize);
         self.cursor = 0;
     }
 
@@ -73,7 +72,6 @@ impl Printer {
             .unwrap();
         }
         self.cursor += bytes.len();
-        // self.print(buf[self.cursor..].to_vec());
 
         stdout().flush().unwrap();
     }
@@ -113,14 +111,6 @@ impl Printer {
             self.delete(1);
         }
     }
-
-    // pub fn flush_cursor(&self) {
-    //     crossterm::execute!(
-    //         io::stdout(),
-    //         crossterm::cursor::MoveToColumn((self.cursor + self.prompt.len()) as u16)
-    //     )
-    //     .unwrap();
-    // }
 
     pub fn cursor_left(&mut self, len: usize) {
         if self.cursor > 0 {
@@ -213,4 +203,28 @@ impl fmt::Display for Prompt {
             self.path.bright_cyan()
         )
     }
+}
+
+// 测试终端颜色显示效果
+#[allow(dead_code)]
+pub fn _print_color_example() {
+    let example = "abcdefghijklmnopqrstuvwxyz";
+    println!("{}", example.bright_black());
+    println!("{}", example.bright_blue());
+    println!("{}", example.bright_cyan());
+    println!("{}", example.bright_green());
+    println!("{}", example.bright_magenta());
+    println!("{}", example.bright_purple());
+    println!("{}", example.bright_red());
+    println!("{}", example.bright_white());
+    println!("{}", example.bright_yellow());
+    println!("{}", example.black());
+    println!("{}", example.blue());
+    println!("{}", example.cyan());
+    println!("{}", example.green());
+    println!("{}", example.magenta());
+    println!("{}", example.purple());
+    println!("{}", example.red());
+    println!("{}", example.white());
+    println!("{}", example.yellow());
 }
