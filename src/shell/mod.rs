@@ -1,9 +1,8 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
-    fmt,
     fs::{self, File, OpenOptions},
-    io::{self, stdout, BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     ops::Deref,
     path::Path,
     print,
@@ -15,47 +14,21 @@ use crate::keycode::{FunctionKeySuffix, SpecialKeycode};
 
 use colored::Colorize;
 use command::{BuildInCmd, Command, CommandError};
+use printer::Printer;
+
+mod printer;
 
 pub mod command;
 
-pub struct Prompt {
-    user_name: String,
-    computer_name: String,
-    path: String,
-}
-
-impl Prompt {
-    pub fn len(&self) -> usize {
-        format!("{}@{}:{}$ ", self.user_name, self.computer_name, self.path).len()
-    }
-
-    pub fn update_path(&mut self) {
-        self.path = std::env::current_dir()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-    }
-}
-
-impl fmt::Display for Prompt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}$ ",
-            format!("{}@{}", self.user_name, self.computer_name).bright_green(),
-            self.path.bright_cyan()
-        )
-    }
-}
-
 const DEFAULT_HISTORY_COMMANDS_PATH: &str = "/history_commands.txt";
 
+#[allow(dead_code)]
 pub struct Shell {
     history_commands: Vec<Rc<RefCell<Vec<u8>>>>,
     history_path: String,
     printer: Printer,
     backend_task: HashMap<usize, Child>,
+    window_size: Option<WindowSize>,
 }
 
 impl Shell {
@@ -65,6 +38,7 @@ impl Shell {
             history_path: DEFAULT_HISTORY_COMMANDS_PATH.to_string(),
             printer: Printer::new(&Rc::new(RefCell::new(Vec::new()))),
             backend_task: HashMap::new(),
+            window_size: WindowSize::new(),
         };
         shell.read_commands();
         shell
@@ -193,11 +167,15 @@ impl Shell {
                             }
 
                             FunctionKeySuffix::Left => {
-                                self.printer.cursor_left();
+                                if self.printer.cursor > 0 {
+                                    self.printer.cursor_left(1);
+                                }
                             }
 
                             FunctionKeySuffix::Right => {
-                                self.printer.cursor_right();
+                                if self.printer.cursor < self.printer.buf.borrow().len() {
+                                    self.printer.cursor_right(1);
+                                }
                             }
 
                             FunctionKeySuffix::Home => {
@@ -285,14 +263,12 @@ impl Shell {
                             1 => {
                                 let old_fragment = fragments.last().unwrap();
                                 let candidate = candidates.last().unwrap();
-                                self.printer.cursor -= old_fragment.len();
-                                self.printer.flush_cursor();
+                                self.printer.cursor_left(old_fragment.len());
                                 self.printer.delete(old_fragment.len());
                                 self.printer
                                     .insert(format!("{}{}", prefix, candidate).as_bytes());
                             }
                             2.. => {
-                                let old_cursor = self.printer.cursor;
                                 self.printer.end();
                                 println!();
                                 for candidate in candidates {
@@ -307,9 +283,10 @@ impl Shell {
                                 }
                                 println!();
                                 self.printer.print_prompt();
-                                Printer::print(&self.printer.buf.deref().borrow());
-                                self.printer.cursor = old_cursor;
-                                self.printer.flush_cursor();
+                                print!(
+                                    "{}",
+                                    String::from_utf8(self.printer.buf.borrow().to_vec()).unwrap()
+                                );
                             }
                             _ => {}
                         }
@@ -322,6 +299,7 @@ impl Shell {
                     1..=31 => {}
                     c => {
                         self.printer.insert(&[c]);
+                        // String::from_utf8("abdsdf".as_bytes().to_vec()).unwrap();
                     }
                 }
             }
@@ -351,137 +329,30 @@ impl Shell {
     }
 }
 
-struct Printer {
-    /// 提示语
-    prompt: Prompt,
-    /// 缓存区，记录当前显示的内容
-    buf: Rc<RefCell<Vec<u8>>>,
-    /// 光标位置（不包括提示语）
-    cursor: usize,
+#[allow(dead_code)]
+struct WindowSize {
+    row: usize,
+    col: usize,
 }
 
-impl Printer {
-    fn new(bytes: &Rc<RefCell<Vec<u8>>>) -> Self {
-        let len = bytes.deref().borrow().len();
-        Printer {
-            prompt: Prompt {
-                computer_name: "DragonOS".to_string(),
-                user_name: "root".to_string(),
-                path: std::env::current_dir()
-                    .expect("Error getting current directory")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            },
-            buf: Rc::clone(bytes),
-            cursor: len,
+impl WindowSize {
+    pub fn new() -> Option<Self> {
+        let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+        if unsafe {
+            libc::ioctl(
+                libc::STDOUT_FILENO,
+                libc::TIOCGWINSZ,
+                &mut ws as *mut libc::winsize,
+            )
+        } == -1
+        {
+            None
+        } else {
+            Some(Self {
+                row: ws.ws_row.into(),
+                col: ws.ws_col.into(),
+            })
         }
-    }
-
-    /// 读取输入前初始化信息
-    fn init_before_readline(&mut self) {
-        self.buf = Rc::new(RefCell::new(Vec::new()));
-        self.prompt.update_path();
-        self.print_prompt();
-        self.cursor = 0;
-        self.flush_cursor();
-    }
-
-    fn print_prompt(&self) {
-        print!("{}", self.prompt);
-        stdout().flush().unwrap();
-    }
-
-    /// 在光标处插入字符串
-    fn insert(&mut self, bytes: &[u8]) {
-        let mut buf = self.buf.deref().borrow_mut();
-        // self.delete_to_cursor(buf.len() - cursor);
-        // print!("{}"," ".repeat(buf.len() - cursor));
-        Printer::print(bytes);
-        Printer::print(&buf[self.cursor..]);
-        buf.splice(self.cursor..self.cursor, bytes.iter().cloned());
-        self.cursor += bytes.len();
-        self.flush_cursor();
-        stdout().flush().unwrap();
-    }
-
-    /// 删除下标为[cursor,cursor + len)的字符，光标位置不变
-    fn delete(&self, len: usize) {
-        let cursor = self.cursor;
-        let mut buf = self.buf.deref().borrow_mut();
-        if cursor + len - 1 < buf.len() {
-            Printer::print(&buf[cursor + len..]);
-            print!("{}", " ".repeat(len));
-            self.flush_cursor();
-            buf.drain(cursor..cursor + len);
-            stdout().flush().unwrap();
-        }
-    }
-
-    fn backspace(&mut self) {
-        if self.cursor > 0 {
-            crossterm::execute!(io::stdout(), crossterm::cursor::MoveLeft(1)).unwrap();
-            self.cursor -= 1;
-            self.flush_cursor();
-            self.delete(1);
-        }
-    }
-
-    fn flush_cursor(&self) {
-        crossterm::execute!(
-            io::stdout(),
-            crossterm::cursor::MoveToColumn((self.cursor + self.prompt.len()) as u16)
-        )
-        .unwrap();
-    }
-
-    fn cursor_left(&mut self) {
-        if self.cursor > 0 {
-            crossterm::execute!(io::stdout(), crossterm::cursor::MoveLeft(1)).unwrap();
-            self.cursor -= 1;
-        }
-    }
-
-    fn cursor_right(&mut self) {
-        let buf = self.buf.deref().borrow();
-        if self.cursor < buf.len() {
-            crossterm::execute!(io::stdout(), crossterm::cursor::MoveRight(1)).unwrap();
-            self.cursor += 1;
-        }
-    }
-
-    fn home(&mut self) {
-        self.cursor = 0;
-        self.flush_cursor();
-    }
-
-    fn end(&mut self) {
-        self.cursor = self.buf.deref().borrow().len();
-        self.flush_cursor();
-    }
-
-    fn change_line(&mut self, new_buf: &Rc<RefCell<Vec<u8>>>) {
-        let old_buf_borrow = self.buf.deref().borrow();
-        let new_buf_borrow = new_buf.deref().borrow();
-        self.cursor = 0;
-        self.flush_cursor();
-        Printer::print(&new_buf_borrow[..]);
-        self.cursor = new_buf_borrow.len();
-        if new_buf_borrow.len() < old_buf_borrow.len() {
-            print!(
-                "{}",
-                " ".repeat(old_buf_borrow.len() - new_buf_borrow.len())
-            );
-            self.flush_cursor();
-        }
-        drop(old_buf_borrow);
-        drop(new_buf_borrow);
-        self.buf = Rc::clone(new_buf);
-        stdout().flush().unwrap();
-    }
-
-    fn print(bytes: &[u8]) {
-        print!("{}", String::from_utf8(bytes.to_vec()).unwrap());
     }
 }
 
