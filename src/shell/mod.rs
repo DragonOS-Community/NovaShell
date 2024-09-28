@@ -144,6 +144,59 @@ impl Shell {
         }
     }
 
+    fn handle_funckey(&mut self, command_index: &mut usize) {
+        let key = Self::read_char();
+        if key != FunctionKeySuffix::SUFFIX_0 {
+            return;
+        }
+        let key1 = Self::read_char();
+        let suffix = &[key, key1];
+        // println!("suffix: {:?}", suffix);
+        let function_key = FunctionKeySuffix::try_from(suffix);
+        if function_key.is_none() {
+            return;
+        }
+        let function_key = function_key.unwrap();
+
+        match function_key {
+            FunctionKeySuffix::Up => {
+                if *command_index > 0 {
+                    *command_index -= 1;
+                    self.printer
+                        .change_line(self.history_commands.get(*command_index).unwrap());
+                }
+            }
+
+            FunctionKeySuffix::Down => {
+                if *command_index < self.history_commands.len() - 1 {
+                    *command_index += 1;
+                    self.printer
+                        .change_line(self.history_commands.get(*command_index).unwrap());
+                }
+            }
+
+            FunctionKeySuffix::Left => {
+                if self.printer.cursor > 0 {
+                    self.printer.cursor_left(1);
+                }
+            }
+
+            FunctionKeySuffix::Right => {
+                if self.printer.cursor < self.printer.buf.borrow().len() {
+                    self.printer.cursor_right(1);
+                }
+            }
+
+            FunctionKeySuffix::Home => {
+                self.printer.home();
+            }
+
+            FunctionKeySuffix::End => {
+                self.printer.end();
+            }
+        }
+    }
+
     fn readline(&mut self) -> usize {
         let mut stdout = std::io::stdout();
         self.history_commands.push(Rc::clone(&self.printer.buf));
@@ -152,48 +205,8 @@ impl Shell {
             let key = Self::read_char();
             if let Ok(special_key) = SpecialKeycode::try_from(key) {
                 match special_key {
-                    SpecialKeycode::FunctionKeyPrefix => {
-                        let key = Self::read_char();
-                        let function_key = FunctionKeySuffix::try_from(key).unwrap();
-                        match function_key {
-                            FunctionKeySuffix::Up => {
-                                if command_index > 0 {
-                                    command_index -= 1;
-                                    self.printer.change_line(
-                                        self.history_commands.get(command_index).unwrap(),
-                                    );
-                                }
-                            }
-
-                            FunctionKeySuffix::Down => {
-                                if command_index < self.history_commands.len() - 1 {
-                                    command_index += 1;
-                                    self.printer.change_line(
-                                        self.history_commands.get(command_index).unwrap(),
-                                    );
-                                }
-                            }
-
-                            FunctionKeySuffix::Left => {
-                                if self.printer.cursor > 0 {
-                                    self.printer.cursor_left(1);
-                                }
-                            }
-
-                            FunctionKeySuffix::Right => {
-                                if self.printer.cursor < self.printer.buf.borrow().len() {
-                                    self.printer.cursor_right(1);
-                                }
-                            }
-
-                            FunctionKeySuffix::Home => {
-                                self.printer.home();
-                            }
-
-                            FunctionKeySuffix::End => {
-                                self.printer.end();
-                            }
-                        }
+                    SpecialKeycode::ESC => {
+                        self.handle_funckey(&mut command_index);
                     }
 
                     SpecialKeycode::LF | SpecialKeycode::CR => {
@@ -202,12 +215,8 @@ impl Shell {
                         return 1;
                     }
 
-                    SpecialKeycode::BackSpace => {
+                    SpecialKeycode::BackSpace | SpecialKeycode::Delete => {
                         self.printer.backspace();
-                    }
-
-                    SpecialKeycode::Delete => {
-                        self.printer.delete(1);
                     }
 
                     SpecialKeycode::Tab => {
