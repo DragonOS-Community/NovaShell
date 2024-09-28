@@ -145,17 +145,16 @@ impl Shell {
     }
 
     fn handle_funckey(&mut self, command_index: &mut usize) {
-        let key = Self::read_char();
-        if key != FunctionKeySuffix::SUFFIX_0 {
-            return;
+        let mut keys = Vec::new();
+
+        while FunctionKeySuffix::should_read_more(&keys) {
+            keys.push(Self::read_char());
         }
-        let key1 = Self::read_char();
-        let suffix = &[key, key1];
-        // println!("suffix: {:?}", suffix);
-        let function_key = FunctionKeySuffix::try_from(suffix);
+        let function_key = FunctionKeySuffix::try_from(&keys);
         if function_key.is_none() {
             return;
         }
+
         let function_key = function_key.unwrap();
 
         match function_key {
@@ -194,6 +193,7 @@ impl Shell {
             FunctionKeySuffix::End => {
                 self.printer.end();
             }
+            FunctionKeySuffix::Delete => self.printer.delete(1),
         }
     }
 
@@ -215,7 +215,7 @@ impl Shell {
                         return 1;
                     }
 
-                    SpecialKeycode::BackSpace | SpecialKeycode::Delete => {
+                    SpecialKeycode::BackSpace => {
                         self.printer.backspace();
                     }
 

@@ -6,8 +6,7 @@ use num_enum::TryFromPrimitive;
 pub enum SpecialKeycode {
     LF = b'\n',
     CR = b'\r',
-    Delete = b'\x7f',
-    BackSpace = b'\x08',
+    BackSpace = b'\x7f',
     Tab = b'\t',
 
     ESC = 0x1B,
@@ -23,13 +22,14 @@ impl Into<u8> for SpecialKeycode {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[allow(dead_code)]
 pub enum FunctionKeySuffix {
-    Up = 0x48,
-    Down = 0x50,
-    Left = 0x4B,
-    Right = 0x4D,
+    Up,
+    Down,
+    Left,
+    Right,
 
-    Home = 0x47,
-    End = 0x4F,
+    Home,
+    End,
+    Delete,
 }
 
 impl FunctionKeySuffix {
@@ -42,6 +42,7 @@ impl FunctionKeySuffix {
             FunctionKeySuffix::Right => &[0x5b, 0x43],
             FunctionKeySuffix::Home => &[0x5b, 0x48],
             FunctionKeySuffix::End => &[0x5b, 0x46],
+            FunctionKeySuffix::Delete => &[0x5b, 0x33, 0x7e],
         }
     }
 
@@ -53,7 +54,17 @@ impl FunctionKeySuffix {
             [0x5b, 0x43] => Some(FunctionKeySuffix::Right),
             [0x5b, 0x48] => Some(FunctionKeySuffix::Home),
             [0x5b, 0x46] => Some(FunctionKeySuffix::End),
+            [0x5b, 0x33, 0x7e] => Some(FunctionKeySuffix::Delete),
             _ => None,
+        }
+    }
+
+    pub fn should_read_more(value: &[u8]) -> bool {
+        match value.len() {
+            0 => true,
+            1 => value[0] == Self::SUFFIX_0,
+            2 => value[0] == Self::SUFFIX_0 && value[1] == 0x33,
+            _ => false,
         }
     }
 }
