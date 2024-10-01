@@ -315,7 +315,11 @@ impl Shell {
             .expect("Failed to execute command");
 
         if !run_backend {
-            let _ = child.wait();
+            unsafe {
+                libc::tcsetpgrp(libc::STDIN_FILENO, child.id() as i32);
+                let _ = child.wait();
+                libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32);
+            };
         } else {
             self.add_backend_task(child);
         }
