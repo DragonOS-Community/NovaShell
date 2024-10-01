@@ -52,16 +52,17 @@ impl Shell {
     }
 
     pub fn exec(&mut self) {
-        // 开启终端raw模式
+        // 设置前台进程组
+        unsafe {
+            libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32);
+        };
+
         // 开启终端raw模式
         crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
 
         // 循环读取一行
-
-        // 循环读取一行
         loop {
             self.printer.init_before_readline();
-            // 读取一行
             // 读取一行
             if self.readline() == 0 {
                 println!();
@@ -69,9 +70,6 @@ impl Shell {
             }
 
             let command_bytes = self.printer.buf.borrow().clone();
-
-            // 如果命令不以空格开头且不跟上一条命令相同，这条命令会被记录
-
             // 如果命令不以空格开头且不跟上一条命令相同，这条命令会被记录
             if !command_bytes.is_empty()
                 && !command_bytes.starts_with(&[b' '])
@@ -87,9 +85,6 @@ impl Shell {
                     .push(Rc::new(RefCell::new(command_bytes.clone())));
                 self.write_commands(&command_bytes);
             };
-
-            // 命令不为空，执行命令
-
             // 命令不为空，执行命令
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
