@@ -11,11 +11,13 @@ mod keycode;
 
 mod env;
 
-use env::Env;
+mod parser;
+
+use env::EnvManager;
 use shell::Shell;
 
 fn main() {
-    Env::init();
+    EnvManager::init();
     let mut shell = Shell::new();
     shell.exec();
     return;

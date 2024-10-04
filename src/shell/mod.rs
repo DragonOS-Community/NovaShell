@@ -1,22 +1,26 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
     ops::Deref,
-    path::Path,
     print,
     process::Child,
     rc::Rc,
 };
 
-use crate::keycode::{FunctionKeySuffix, SpecialKeycode};
+use crate::{
+    keycode::{FunctionKeySuffix, SpecialKeycode},
+    parser::{Parser, Pipeline},
+};
 
 use colored::Colorize;
-use command::{BuildInCmd, Command, CommandError};
+use command::BuildInCmd;
 use printer::Printer;
+use thread_manager::ThreadManager;
 
 mod printer;
+
+mod thread_manager;
 
 pub mod command;
 
@@ -27,28 +31,39 @@ pub struct Shell {
     history_commands: Vec<Rc<RefCell<Vec<u8>>>>,
     history_path: String,
     printer: Printer,
-    backend_task: HashMap<usize, Child>,
-    window_size: Option<WindowSize>,
+    backend_thread: ThreadManager<Pipeline, Child>,
 }
 
 impl Shell {
     pub fn new() -> Shell {
+        if BuildInCmd::map().is_none() {
+            unsafe { BuildInCmd::init() };
+        }
+
         let mut shell = Shell {
             history_commands: Vec::new(),
             history_path: DEFAULT_HISTORY_COMMANDS_PATH.to_string(),
             printer: Printer::new(&Rc::new(RefCell::new(Vec::new()))),
-            backend_task: HashMap::new(),
-            window_size: WindowSize::new(),
+            backend_thread: Self::create_backend_thread(),
         };
         shell.read_commands();
         shell
     }
 
-    pub fn chdir(&mut self, new_dir: &String) {
-        let path = Path::new(&new_dir);
-        if let Err(e) = std::env::set_current_dir(&path) {
-            eprintln!("Error changing directory: {}", e);
-        }
+    fn create_backend_thread() -> ThreadManager<Pipeline, Child> {
+        ThreadManager::new(|| {
+            let (p_s, c_r) = std::sync::mpsc::channel::<Pipeline>();
+            let (c_s, p_r) = std::sync::mpsc::channel::<Child>();
+            let map = BuildInCmd::map();
+            let func = move || loop {
+                if let Ok(pipeline) = c_r.recv() {
+                    for child in pipeline.execute(map.clone()) {
+                        let _ = c_s.send(child);
+                    }
+                };
+            };
+            (p_s, p_r, func)
+        })
     }
 
     pub fn exec(&mut self) {
@@ -89,17 +104,44 @@ impl Shell {
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
             }
-            self.detect_task_done();
         }
     }
 
     fn exec_commands_in_line(&mut self, command_bytes: &Vec<u8>) {
-        match Command::parse(String::from_utf8(command_bytes.clone()).unwrap()) {
-            Ok(commands) => commands
-                .into_iter()
-                .for_each(|command| self.exec_command(command)),
-            Err(e) => CommandError::handle(e),
+        // match Command::parse(String::from_utf8(command_bytes.clone()).unwrap()) {
+        //     Ok(commands) => commands
+        //         .into_iter()
+        //         .for_each(|command| self.exec_command(command)),
+        //     Err(e) => CommandError::handle(e),
+        // }
+
+        // 解析命令
+        let input_command = String::from_utf8(command_bytes.clone()).unwrap();
+        let pipelines = Parser::parse(&input_command).unwrap();
+
+        let mut foreground_pipelines = Vec::new();
+
+        // 后台pipeline发送给子线程执行
+        for pipeline in pipelines {
+            if pipeline.backend() {
+                let _ = self.backend_thread.send(pipeline);
+            } else {
+                foreground_pipelines.push(pipeline);
+            }
         }
+
+        crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
+
+        // 顺序执行所有前台pipeline
+        for pipeline in &foreground_pipelines {
+            for mut child in pipeline.execute(BuildInCmd::map().clone()) {
+                let _ = child.wait();
+            }
+        }
+
+        crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
+
+        foreground_pipelines.clear();
     }
 
     pub fn read_commands(&mut self) {
@@ -318,27 +360,6 @@ impl Shell {
             stdout.flush().unwrap();
         }
     }
-
-    fn add_backend_task(&mut self, child: Child) {
-        let mut job_id = 1;
-        while self.backend_task.contains_key(&job_id) {
-            job_id += 1;
-        }
-
-        println!("[{}] {}", job_id, child.id());
-        self.backend_task.insert(job_id, child);
-    }
-
-    fn detect_task_done(&mut self) {
-        self.backend_task.retain(|job_id, task| {
-            if let Ok(Some(status)) = task.try_wait() {
-                println!("[{}] done with status: {}", job_id, status);
-                false
-            } else {
-                true
-            }
-        })
-    }
 }
 
 #[allow(dead_code)]
@@ -347,6 +368,7 @@ struct WindowSize {
     col: usize,
 }
 
+#[allow(dead_code)]
 impl WindowSize {
     pub fn new() -> Option<Self> {
         let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
@@ -370,9 +392,9 @@ impl WindowSize {
 
 pub fn complete_command(command: &str) -> (&str, Vec<String>) {
     let mut candidates: Vec<String> = Vec::new();
-    for BuildInCmd(cmd) in BuildInCmd::BUILD_IN_CMD {
+    for (cmd, _) in BuildInCmd::map().as_ref().unwrap().lock().unwrap().iter() {
         if cmd.starts_with(command) {
-            candidates.push(String::from(*cmd));
+            candidates.push(String::from(cmd));
         }
     }
     ("", candidates)
