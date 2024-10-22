@@ -9,6 +9,8 @@ use std::{
 
 use colored::Colorize;
 
+use crate::env::EnvManager;
+
 pub struct Printer {
     /// 提示语
     pub prompt: Prompt,
@@ -24,11 +26,7 @@ impl Printer {
             prompt: Prompt {
                 computer_name: "DragonOS".to_string(),
                 user_name: "root".to_string(),
-                path: std::env::current_dir()
-                    .expect("Error getting current directory")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
+                path: EnvManager::current_dir(),
             },
             buf: Rc::clone(bytes),
             cursor: 0,
@@ -186,11 +184,7 @@ impl Prompt {
     }
 
     pub fn update_path(&mut self) {
-        self.path = std::env::current_dir()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
+        self.path = EnvManager::current_dir()
     }
 }
 

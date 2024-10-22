@@ -8,6 +8,8 @@ use std::{
 
 use regex::Regex;
 
+use crate::env::EnvManager;
+
 #[derive(Debug)]
 pub enum Token {
     Word(String),   // 普通的命令或选项
@@ -533,7 +535,7 @@ impl Pipeline {
                     Ok(real_path) => {
                         let mut child_command = std::process::Command::new(real_path);
                         child_command.args(cmd.args.clone());
-                        child_command.current_dir(std::env::current_dir().unwrap());
+                        child_command.current_dir(EnvManager::current_dir());
                         if stdout.is_some() {
                             child_command.stdin(stdout.take().unwrap().as_std());
                         }
