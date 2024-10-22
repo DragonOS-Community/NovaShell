@@ -9,6 +9,7 @@ use std::{
 };
 
 use crate::{
+    env::EnvManager,
     keycode::{FunctionKeySuffix, SpecialKeycode},
     parser::{Parser, Pipeline},
 };
@@ -31,7 +32,7 @@ pub struct Shell {
     history_commands: Vec<Rc<RefCell<Vec<u8>>>>,
     history_path: String,
     printer: Printer,
-    backend_thread: ThreadManager<Pipeline, Child>,
+    backend_thread: ThreadManager<(String, Vec<Pipeline>), Child>,
 }
 
 impl Shell {
@@ -50,15 +51,18 @@ impl Shell {
         shell
     }
 
-    fn create_backend_thread() -> ThreadManager<Pipeline, Child> {
+    fn create_backend_thread() -> ThreadManager<(String, Vec<Pipeline>), Child> {
         ThreadManager::new(|| {
-            let (p_s, c_r) = std::sync::mpsc::channel::<Pipeline>();
+            let (p_s, c_r) = std::sync::mpsc::channel::<(String, Vec<Pipeline>)>();
             let (c_s, p_r) = std::sync::mpsc::channel::<Child>();
             let map = BuildInCmd::map();
             let func = move || loop {
-                if let Ok(pipeline) = c_r.recv() {
-                    for child in pipeline.execute(map.clone()) {
-                        let _ = c_s.send(child);
+                if let Ok((dir, pipelines)) = c_r.recv() {
+                    std::env::set_current_dir(dir).expect("set current dir failed");
+                    for pipeline in pipelines {
+                        for child in pipeline.execute(map.clone()) {
+                            let _ = c_s.send(child);
+                        }
                     }
                 };
             };
@@ -108,27 +112,25 @@ impl Shell {
     }
 
     fn exec_commands_in_line(&mut self, command_bytes: &Vec<u8>) {
-        // match Command::parse(String::from_utf8(command_bytes.clone()).unwrap()) {
-        //     Ok(commands) => commands
-        //         .into_iter()
-        //         .for_each(|command| self.exec_command(command)),
-        //     Err(e) => CommandError::handle(e),
-        // }
-
         // 解析命令
         let input_command = String::from_utf8(command_bytes.clone()).unwrap();
         let pipelines = Parser::parse(&input_command).unwrap();
 
         let mut foreground_pipelines = Vec::new();
+        let mut backend_pipelines = Vec::new();
 
-        // 后台pipeline发送给子线程执行
         for pipeline in pipelines {
             if pipeline.backend() {
-                let _ = self.backend_thread.send(pipeline);
+                backend_pipelines.push(pipeline);
             } else {
                 foreground_pipelines.push(pipeline);
             }
         }
+
+        // 后台pipeline发送给子线程执行
+        let _ = self
+            .backend_thread
+            .send((EnvManager::current_dir(), backend_pipelines));
 
         crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
 
