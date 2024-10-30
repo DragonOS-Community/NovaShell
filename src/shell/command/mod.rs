@@ -93,6 +93,19 @@ impl BuildInCmd {
                 which::which(name).map_err(|_| ExecuteErrorType::CommandNotFound)
             }?;
 
+            let pgrp = unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) };
+
+            // 如果当前终端的前台进程等于当前进程，则设置前台进程
+            let run_foreground = if pgrp >= 0 {
+                if pgrp as u32 == std::process::id() {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
             let mut err: Option<ExecuteErrorType> = None;
 
             match std::process::Command::new(real_path)
@@ -100,17 +113,27 @@ impl BuildInCmd {
                 .current_dir(EnvManager::current_dir())
                 .spawn()
             {
-                Ok(mut child) => match child.wait() {
-                    Ok(exit_status) => match exit_status.code() {
-                        Some(exit_code) => {
-                            if exit_code != 0 {
-                                err = Some(ExecuteErrorType::ExitWithCode(exit_code));
+                Ok(mut child) => {
+                    if run_foreground {
+                        unsafe { libc::tcsetpgrp(libc::STDIN_FILENO, child.id() as i32) };
+                    }
+
+                    match child.wait() {
+                        Ok(exit_status) => match exit_status.code() {
+                            Some(exit_code) => {
+                                if exit_code != 0 {
+                                    err = Some(ExecuteErrorType::ExitWithCode(exit_code));
+                                }
                             }
-                        }
-                        None => err = Some(ExecuteErrorType::ProcessTerminated),
-                    },
-                    Err(_) => err = Some(ExecuteErrorType::ExecuteFailed),
-                },
+                            None => err = Some(ExecuteErrorType::ProcessTerminated),
+                        },
+                        Err(_) => err = Some(ExecuteErrorType::ExecuteFailed),
+                    }
+
+                    if run_foreground {
+                        unsafe { libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32) };
+                    }
+                }
                 Err(_) => todo!(),
             };
             return if let Some(err) = err {
