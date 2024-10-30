@@ -495,16 +495,22 @@ impl Pipeline {
                                 libc::dup2(old_stdout, libc::STDOUT_FILENO);
                             }
                         }
-                    } else if child_fd < 0 {
-                        err = Some(ExecuteErrorType::ExecuteFailed)
-                    }
+                    } else if child_fd > 0 {
+                        // 当前进程为父进程
+                        unsafe {
+                            // 设置前台进程
+                            libc::tcsetpgrp(libc::STDIN_FILENO, child_fd);
 
-                    // 后台命令且当前进程为父进程
-                    if self.backend && !child_fd == 0 {
-                        err = match unsafe { libc::waitpid(child_fd, std::ptr::null_mut(), 0) } {
-                            -1 => Some(ExecuteErrorType::ExecuteFailed),
-                            _ => None,
+                            err = match libc::waitpid(child_fd, std::ptr::null_mut(), 0) {
+                                -1 => Some(ExecuteErrorType::ExecuteFailed),
+                                _ => None,
+                            };
+
+                            // 还原前台进程
+                            libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32);
                         }
+                    } else {
+                        err = Some(ExecuteErrorType::ExecuteFailed)
                     }
                 }
             };
@@ -586,6 +592,11 @@ impl Pipeline {
 
                                     // println!("exec command: {child_command:#?}");
 
+                                    unsafe {
+                                        // 设置前台进程
+                                        libc::tcsetpgrp(libc::STDIN_FILENO, child.id() as i32);
+                                    };
+
                                     match child.wait() {
                                         Ok(exit_status) => match exit_status.code() {
                                             Some(exit_code) => {
@@ -599,6 +610,14 @@ impl Pipeline {
                                         },
                                         Err(_) => err = Some(ExecuteErrorType::ExecuteFailed),
                                     };
+
+                                    // 还原前台进程
+                                    unsafe {
+                                        libc::tcsetpgrp(
+                                            libc::STDIN_FILENO,
+                                            std::process::id() as i32,
+                                        );
+                                    }
 
                                     children.push(child);
                                 }
