@@ -479,9 +479,8 @@ impl Pipeline {
 
                         // 如果之前没有出错，执行命令
                         if err.is_none() {
-                            match f(&cmd.args) {
-                                Ok(_) => err = None,
-                                Err(err_type) => err = Some(err_type),
+                            if let Err(err_type) = f(&cmd.args) {
+                                err = Some(err_type);
                             }
                         }
 
@@ -495,16 +494,32 @@ impl Pipeline {
                                 libc::dup2(old_stdout, libc::STDOUT_FILENO);
                             }
                         }
+
+                        if self.backend {
+                            // 当前为后台进程，退出当前进程
+                            std::process::exit(if err.is_none() { 0 } else { 1 });
+                        }
                     } else if child_fd > 0 {
                         // 当前进程为父进程
                         unsafe {
                             // 设置前台进程
                             libc::tcsetpgrp(libc::STDIN_FILENO, child_fd);
 
-                            err = match libc::waitpid(child_fd, std::ptr::null_mut(), 0) {
+                            let mut status = 0;
+                            err = match libc::waitpid(child_fd, &mut status, 0) {
                                 -1 => Some(ExecuteErrorType::ExecuteFailed),
                                 _ => None,
                             };
+
+                            if status != 0 {
+                                if libc::WIFEXITED(status) {
+                                    if libc::WEXITSTATUS(status) != 0 {
+                                        err = Some(ExecuteErrorType::ExitWithCode(status));
+                                    }
+                                } else if libc::WIFSIGNALED(status) {
+                                    err = Some(ExecuteErrorType::ProcessTerminated);
+                                }
+                            }
 
                             // 还原前台进程
                             libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32);
