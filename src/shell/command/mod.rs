@@ -1,5 +1,7 @@
 use help::Helper;
 use std::collections::HashMap;
+use std::os::fd::{AsFd, AsRawFd};
+use std::os::unix::process::CommandExt;
 use std::sync::{Arc, Mutex};
 use std::{fs::File, io::Read, print};
 
@@ -106,18 +108,37 @@ impl BuildInCmd {
                 false
             };
 
-            let mut err: Option<ExecuteErrorType> = None;
-
-            match std::process::Command::new(real_path)
+            let mut child_command = std::process::Command::new(real_path);
+            child_command
                 .args(args)
-                .current_dir(EnvManager::current_dir())
-                .spawn()
-            {
+                .current_dir(EnvManager::current_dir());
+
+            let (rfd, wfd) = nix::unistd::pipe().expect("Failed to create pipe");
+
+            unsafe {
+                child_command.pre_exec(move || {
+                    let mut b = [0u8; 1];
+                    loop {
+                        let x = nix::unistd::read(rfd.as_raw_fd(), &mut b)?;
+                        if x != 0 {
+                            break;
+                        } else {
+                            std::thread::sleep(std::time::Duration::from_millis(30));
+                        }
+                    }
+                    Ok(())
+                });
+            }
+
+            let mut err: Option<ExecuteErrorType> = None;
+            match child_command.spawn() {
                 Ok(mut child) => {
                     if run_foreground {
                         unsafe { libc::tcsetpgrp(libc::STDIN_FILENO, child.id() as i32) };
                     }
-
+                    // 让子进程继续执行
+                    nix::unistd::write(wfd.as_fd(), &[1u8]).expect("Failed to write to pipe");
+                    drop(wfd);
                     match child.wait() {
                         Ok(exit_status) => match exit_status.code() {
                             Some(exit_code) => {

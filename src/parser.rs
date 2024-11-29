@@ -1,11 +1,15 @@
 use std::{
     collections::HashMap,
     io::ErrorKind,
-    os::fd::{AsRawFd, FromRawFd},
+    os::{
+        fd::{AsFd, AsRawFd, FromRawFd},
+        unix::process::CommandExt,
+    },
     process::{Child, ChildStdout, Stdio},
     sync::{Arc, Mutex},
 };
 
+use nix::unistd::{read, write};
 use regex::Regex;
 
 use crate::env::EnvManager;
@@ -403,15 +407,36 @@ impl Pipeline {
                     // 找到内部命令，优先执行，设置标记
                     internal = true;
 
-                    // child_fd
-                    let child_fd = if self.backend {
+                    // 用于同步父子进程的tty setpgrp行为的管道
+                    let (rfd, wfd) = nix::unistd::pipe().expect("Failed to create pipe");
+
+                    // child_pid
+                    let child_pid = if self.backend {
                         unsafe { libc::fork() }
                     } else {
                         0
                     };
 
                     // 为子进程或前台运行
-                    if child_fd == 0 {
+                    if child_pid == 0 {
+                        if self.backend {
+                            drop(wfd);
+                            let mut tmpbf = [0u8; 1];
+                            loop {
+                                let x = read(rfd.as_raw_fd(), &mut tmpbf)
+                                    .expect("Failed to read from pipe");
+                                if x > 0 {
+                                    break;
+                                } else {
+                                    std::thread::sleep(std::time::Duration::from_millis(30));
+                                }
+                            }
+                            drop(rfd);
+                        } else {
+                            drop(rfd);
+                            drop(wfd);
+                        }
+
                         let mut old_stdin: Option<i32> = None;
                         let mut old_stdout: Option<i32> = None;
 
@@ -499,14 +524,18 @@ impl Pipeline {
                             // 当前为后台进程，退出当前进程
                             std::process::exit(if err.is_none() { 0 } else { 1 });
                         }
-                    } else if child_fd > 0 {
+                    } else if child_pid > 0 {
                         // 当前进程为父进程
+                        drop(rfd);
                         unsafe {
                             // 设置前台进程
-                            libc::tcsetpgrp(libc::STDIN_FILENO, child_fd);
+                            libc::tcsetpgrp(libc::STDIN_FILENO, child_pid);
+                            // 让子进程开始运行
+                            write(wfd.as_fd(), &[1]).expect("Failed to write to pipe");
+                            drop(wfd);
 
                             let mut status = 0;
-                            err = match libc::waitpid(child_fd, &mut status, 0) {
+                            err = match libc::waitpid(child_pid, &mut status, 0) {
                                 -1 => Some(ExecuteErrorType::ExecuteFailed),
                                 _ => None,
                             };
@@ -522,7 +551,14 @@ impl Pipeline {
                             }
 
                             // 还原前台进程
-                            libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32);
+                            let r = libc::tcsetpgrp(libc::STDIN_FILENO, std::process::id() as i32);
+                            if r == -1 {
+                                let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
+                                println!(
+                                    "[novashell error]: restore tty pgrp: tcsetpgrp failed: {}",
+                                    errno
+                                );
+                            }
                         }
                     } else {
                         err = Some(ExecuteErrorType::ExecuteFailed)
@@ -596,7 +632,22 @@ impl Pipeline {
                                 child_command.stdout(Stdio::piped());
                             }
                         }
+                        let (rfd, wfd) = nix::unistd::pipe().expect("Failed to create pipe");
 
+                        unsafe {
+                            child_command.pre_exec(move || {
+                                let mut b = [0u8; 1];
+                                loop {
+                                    let x = nix::unistd::read(rfd.as_raw_fd(), &mut b)?;
+                                    if x != 0 {
+                                        break;
+                                    } else {
+                                        std::thread::sleep(std::time::Duration::from_millis(30));
+                                    }
+                                }
+                                Ok(())
+                            });
+                        }
                         if err.is_none() {
                             match child_command.spawn() {
                                 Ok(mut child) => {
@@ -611,7 +662,9 @@ impl Pipeline {
                                         // 设置前台进程
                                         libc::tcsetpgrp(libc::STDIN_FILENO, child.id() as i32);
                                     };
-
+                                    // 让子进程继续执行
+                                    write(wfd.as_fd(), &[1u8]).expect("Failed to write to pipe");
+                                    drop(wfd);
                                     match child.wait() {
                                         Ok(exit_status) => match exit_status.code() {
                                             Some(exit_code) => {
