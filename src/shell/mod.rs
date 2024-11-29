@@ -104,6 +104,7 @@ impl Shell {
                     .push(Rc::new(RefCell::new(command_bytes.clone())));
                 self.write_commands(&command_bytes);
             };
+
             // 命令不为空，执行命令
             if !command_bytes.iter().all(|&byte| byte == b' ') {
                 self.exec_commands_in_line(&command_bytes);
@@ -177,8 +178,9 @@ impl Shell {
     fn read_char() -> u8 {
         let mut buf: [u8; 1] = [0];
         loop {
-            if std::io::stdin().read(&mut buf).is_ok() {
-                return buf[0];
+            match std::io::stdin().read(&mut buf) {
+                Ok(_) => return buf[0],
+                Err(e) => println!("read char failed: {}", e),
             }
         }
     }
