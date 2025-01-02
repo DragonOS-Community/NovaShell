@@ -1,4 +1,5 @@
 use help::Helper;
+use libc::{reboot, LINUX_REBOOT_CMD_RESTART};
 use std::collections::HashMap;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::process::CommandExt;
@@ -169,7 +170,14 @@ impl BuildInCmd {
 
     fn shell_cmd_reboot(args: &Vec<String>) -> Result<(), ExecuteErrorType> {
         if args.len() == 0 {
-            unsafe { libc::syscall(libc::SYS_reboot, 0, 0, 0, 0, 0, 0) };
+            // 调用 reboot 系统调用
+            unsafe {
+                let result = reboot(LINUX_REBOOT_CMD_RESTART);
+                if result == -1 {
+                    eprintln!("Failed to reboot: {}", std::io::Error::last_os_error());
+                    return Err(ExecuteErrorType::ExecuteFailed);
+                }
+            }
             return Ok(());
         } else {
             return Err(ExecuteErrorType::TooManyArguments);
